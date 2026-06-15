@@ -20,7 +20,9 @@ A personal event scraper and local web UI for tracking SF tech events. Pulls fro
 git clone https://github.com/KShivendu/event-radar
 cd event-radar
 pip install -r requirements.txt
-python3 -m spacy download en_core_web_sm  # only needed for suggest_keywords.py
+
+# Optional: only needed for suggest_keywords.py
+pip install spacy && python3 -m spacy download en_core_web_sm
 
 cp .env.example .env
 # Edit .env — add your LUMA_COOKIE (grab from browser devtools on any luma.com request)

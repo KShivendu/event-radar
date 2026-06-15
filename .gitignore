@@ -4,3 +4,7 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
+
+# Personal research notes
+*.md
+!README.md
