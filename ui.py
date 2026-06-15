@@ -221,9 +221,17 @@ HTML = r"""<!DOCTYPE html>
 
   <!-- Filters -->
   <div class="flex flex-wrap gap-3 mb-6">
-    <input id="search" type="text" placeholder="Search events..."
-      class="flex-1 min-w-48 rounded-lg px-3 py-2 text-sm"
-      oninput="loadEvents()" />
+    <div class="flex flex-1 min-w-48">
+      <input id="search" type="text" placeholder="Search events..."
+        class="flex-1 rounded-l-lg rounded-r-none px-3 py-2 text-sm border-r-0"
+        oninput="onSearchInput()"
+        onkeydown="if(event.key==='Enter' && lumaMode) lumaSearch()" />
+      <button id="luma-toggle" onclick="toggleLumaMode()"
+        title="Toggle Luma live search"
+        class="px-3 py-2 text-xs font-semibold rounded-r-lg border border-gray-700 text-gray-500 hover:border-indigo-500 hover:text-indigo-400 transition-colors whitespace-nowrap">
+        Luma
+      </button>
+    </div>
     <select id="source" class="rounded-lg px-3 py-2 text-sm" onchange="loadEvents()">
       <option value="all">All sources</option>
       <option value="luma">Luma (all)</option>
@@ -243,23 +251,11 @@ HTML = r"""<!DOCTYPE html>
   <!-- Date pills -->
   <div id="date-pills" class="flex gap-2 flex-wrap mb-6"></div>
 
-  <!-- Events -->
+  <!-- Events (local DB) -->
   <div id="events-container"></div>
 
-  <!-- Luma Live Search -->
-  <div class="mt-12 pt-8 border-t border-gray-800">
-    <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-4">Luma Live Search</h2>
-    <div class="flex gap-3 mb-5">
-      <input id="luma-search-input" type="text" placeholder="Search anything on Luma (e.g. agents, RAG, MCP)..."
-        class="flex-1 rounded-lg px-3 py-2 text-sm"
-        onkeydown="if(event.key==='Enter') lumaSearch()" />
-      <button onclick="lumaSearch()"
-        class="px-4 py-2 rounded-lg text-sm font-medium border border-indigo-600 text-indigo-400 hover:bg-indigo-600 hover:text-white transition-colors">
-        Search
-      </button>
-    </div>
-    <div id="luma-search-results"></div>
-  </div>
+  <!-- Luma Live Search results -->
+  <div id="luma-search-results" class="hidden"></div>
 
 </div>
 
@@ -366,15 +362,49 @@ function renderCard(e) {
     </div>`;
 }
 
+let lumaMode = false;
+
+function toggleLumaMode() {
+  lumaMode = !lumaMode;
+  const btn = document.getElementById('luma-toggle');
+  const input = document.getElementById('search');
+  const eventsContainer = document.getElementById('events-container');
+  const lumaContainer = document.getElementById('luma-search-results');
+  const datePills = document.getElementById('date-pills');
+
+  if (lumaMode) {
+    btn.classList.add('border-indigo-500', 'text-indigo-400', 'bg-indigo-950');
+    btn.classList.remove('border-gray-700', 'text-gray-500');
+    input.placeholder = 'Search Luma (press Enter)...';
+    input.oninput = null;
+    eventsContainer.classList.add('hidden');
+    datePills.classList.add('hidden');
+    lumaContainer.classList.remove('hidden');
+    if (input.value.trim()) lumaSearch();
+  } else {
+    btn.classList.remove('border-indigo-500', 'text-indigo-400', 'bg-indigo-950');
+    btn.classList.add('border-gray-700', 'text-gray-500');
+    input.placeholder = 'Search events...';
+    input.oninput = onSearchInput;
+    eventsContainer.classList.remove('hidden');
+    datePills.classList.remove('hidden');
+    lumaContainer.classList.add('hidden');
+    lumaContainer.innerHTML = '';
+  }
+}
+
+function onSearchInput() { if (!lumaMode) loadEvents(); }
+
 loadEvents();
 
 async function lumaSearch() {
-  const q = document.getElementById('luma-search-input').value.trim();
+  const q = document.getElementById('search').value.trim();
   const container = document.getElementById('luma-search-results');
-  if (!q) return;
-  container.innerHTML = '<p class="text-gray-500 text-sm">Searching...</p>';
+  if (!q) { container.innerHTML = ''; return; }
+  container.innerHTML = '<p class="text-gray-500 text-sm py-4">Searching Luma...</p>';
 
   const res = await fetch('/api/luma-search?q=' + encodeURIComponent(q));
+  document.getElementById('subtitle').textContent = `Luma live search: "${q}"`;
   const data = await res.json();
   if (data.error) { container.innerHTML = `<p class="text-red-400 text-sm">${data.error}</p>`; return; }
   if (!data.length) { container.innerHTML = '<p class="text-gray-500 text-sm">No results.</p>'; return; }
