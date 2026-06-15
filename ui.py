@@ -234,6 +234,7 @@ HTML = r"""<!DOCTYPE html>
       <option value="all">All sources</option>
       <option value="luma">Luma (all)</option>
       <option value="luma:my-events">Luma · My Events</option>
+      <option value="luma:search">Luma · Keyword Search</option>
       <option value="luma:sf">Luma · SF Featured</option>
       <option value="luma:genai-sf">Luma · GenAI SF</option>
       <option value="luma:ai-sf">Luma · AI SF</option>
@@ -331,7 +332,7 @@ function renderEvents() {
 }
 
 function renderCard(e) {
-  const sourceLabels = {'luma:my-events': 'MY EVENTS', 'luma:sf': 'SF FEATURED','luma:genai-sf': 'GENAI SF', 'luma:ai-sf': 'AI SF', 'cerebral_valley': 'CEREBRAL VALLEY'};
+  const sourceLabels = {'luma:my-events': 'MY EVENTS', 'luma:search': 'KEYWORD', 'luma:sf': 'SF FEATURED','luma:genai-sf': 'GENAI SF', 'luma:ai-sf': 'AI SF', 'cerebral_valley': 'CEREBRAL VALLEY'};
   const calLabel = (e.calendars || [e.source]).map(s => sourceLabels[s] || s).join(' · ');
   const sourceBadge = e.source.startsWith('luma')
     ? `<span class="badge badge-luma">${calLabel}</span>`
@@ -368,7 +369,7 @@ function onLiveModeChange() {
   document.getElementById('date-pills').classList.toggle('hidden', live);
   document.getElementById('luma-search-results').classList.toggle('hidden', !live);
   input.placeholder = live ? 'Search Luma (press Enter)...' : 'Search events...';
-  if (!live) { document.getElementById('luma-search-results').innerHTML = ''; loadEvents(); }
+  if (live) { lumaSearch(); } else { document.getElementById('luma-search-results').innerHTML = ''; loadEvents(); }
 }
 
 
