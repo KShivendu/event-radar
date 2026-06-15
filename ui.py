@@ -122,6 +122,51 @@ def api_events():
     return jsonify(result)
 
 
+@app.route("/api/luma-search")
+def api_luma_search():
+    import os, requests as req
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify([])
+
+    cookie = os.environ.get("LUMA_COOKIE", "")
+    headers = {
+        "accept": "*/*",
+        "x-luma-client-type": "luma-web",
+        "x-luma-timezone": "America/Los_Angeles",
+        "x-luma-web-url": "https://luma.com/home",
+        "Referer": "https://luma.com/",
+    }
+    if cookie:
+        headers["cookie"] = cookie
+
+    try:
+        resp = req.get("https://api.luma.com/search/get-results", params={"query": q}, headers=headers, timeout=10)
+        resp.raise_for_status()
+        entries = resp.json().get("events", [])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+    results = []
+    for entry in entries:
+        event = entry.get("event", {})
+        geo = event.get("geo_address_info") or {}
+        gi = entry.get("guest_info")
+        results.append({
+            "name": event.get("name", ""),
+            "start_pt": to_pt(event.get("start_at")),
+            "url": f"https://lu.ma/{event.get('url') or event.get('api_id')}",
+            "location": geo.get("city") or geo.get("full_address") or "",
+            "venue": event.get("location", {}).get("name") if isinstance(event.get("location"), dict) else "",
+            "image_url": event.get("cover_url"),
+            "description": event.get("description") or event.get("description_short"),
+            "registration_status": gi.get("approval_status") if isinstance(gi, dict) else None,
+            "registration_availability": entry.get("registration_availability"),
+            "calendar_name": (entry.get("calendar") or {}).get("name", ""),
+        })
+    return jsonify(results)
+
+
 @app.route("/api/dates")
 def api_dates():
     with get_conn() as conn:
@@ -182,7 +227,7 @@ HTML = r"""<!DOCTYPE html>
     <select id="source" class="rounded-lg px-3 py-2 text-sm" onchange="loadEvents()">
       <option value="all">All sources</option>
       <option value="luma">Luma (all)</option>
-      <option value="luma:sf">Luma · SF Discover</option>
+      <option value="luma:sf">Luma · SF Featured</option>
       <option value="luma:genai-sf">Luma · GenAI SF</option>
       <option value="luma:ai-sf">Luma · AI SF</option>
       <option value="cerebral_valley">Cerebral Valley</option>
@@ -200,6 +245,21 @@ HTML = r"""<!DOCTYPE html>
 
   <!-- Events -->
   <div id="events-container"></div>
+
+  <!-- Luma Live Search -->
+  <div class="mt-12 pt-8 border-t border-gray-800">
+    <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-widest mb-4">Luma Live Search</h2>
+    <div class="flex gap-3 mb-5">
+      <input id="luma-search-input" type="text" placeholder="Search anything on Luma (e.g. agents, RAG, MCP)..."
+        class="flex-1 rounded-lg px-3 py-2 text-sm"
+        onkeydown="if(event.key==='Enter') lumaSearch()" />
+      <button onclick="lumaSearch()"
+        class="px-4 py-2 rounded-lg text-sm font-medium border border-indigo-600 text-indigo-400 hover:bg-indigo-600 hover:text-white transition-colors">
+        Search
+      </button>
+    </div>
+    <div id="luma-search-results"></div>
+  </div>
 
 </div>
 
@@ -276,7 +336,7 @@ function renderEvents() {
 }
 
 function renderCard(e) {
-  const sourceLabels = {'luma:sf': 'SF', 'luma:genai-sf': 'GENAI SF', 'luma:ai-sf': 'AI SF', 'cerebral_valley': 'CEREBRAL VALLEY'};
+  const sourceLabels = {'luma:sf': 'SF FEATURED','luma:genai-sf': 'GENAI SF', 'luma:ai-sf': 'AI SF', 'cerebral_valley': 'CEREBRAL VALLEY'};
   const calLabel = (e.calendars || [e.source]).map(s => sourceLabels[s] || s).join(' · ');
   const sourceBadge = e.source.startsWith('luma')
     ? `<span class="badge badge-luma">${calLabel}</span>`
@@ -301,12 +361,52 @@ function renderCard(e) {
           ${desc}
           ${link}
         </div>
-        ${e.image_url ? `<img src="${e.image_url}" class="w-20 h-20 rounded-lg object-cover flex-shrink-0" onerror="this.style.display='none'">` : ''}
+        ${e.image_url ? `<img src="${e.image_url}" loading="lazy" class="w-20 h-20 rounded-lg object-cover flex-shrink-0" onerror="this.style.display='none'">` : ''}
       </div>
     </div>`;
 }
 
 loadEvents();
+
+async function lumaSearch() {
+  const q = document.getElementById('luma-search-input').value.trim();
+  const container = document.getElementById('luma-search-results');
+  if (!q) return;
+  container.innerHTML = '<p class="text-gray-500 text-sm">Searching...</p>';
+
+  const res = await fetch('/api/luma-search?q=' + encodeURIComponent(q));
+  const data = await res.json();
+  if (data.error) { container.innerHTML = `<p class="text-red-400 text-sm">${data.error}</p>`; return; }
+  if (!data.length) { container.innerHTML = '<p class="text-gray-500 text-sm">No results.</p>'; return; }
+
+  const regMap = {approved: ['badge-approved','✓ Going'], waitlist: ['badge-waitlist','⏳ Waitlisted'], pending_approval: ['badge-pending','⏳ Pending'], invited: ['badge-invited','✉ Invited']};
+  const availMap = {'sold-out': 'Sold out', 'waitlist': 'Waitlist open'};
+
+  container.innerHTML = '<div class="space-y-3">' + data.map(e => {
+    const regBadge = e.registration_status && regMap[e.registration_status]
+      ? `<span class="badge ${regMap[e.registration_status][0]}">${regMap[e.registration_status][1]}</span>` : '';
+    const availBadge = !e.registration_status && availMap[e.registration_availability]
+      ? `<span class="badge" style="background:#2a1a1a;color:#f87171">${availMap[e.registration_availability]}</span>` : '';
+    const cal = e.calendar_name ? `<span class="text-gray-600 text-xs">${e.calendar_name}</span>` : '';
+    const venue = e.location ? `· ${e.location}` : '';
+    const desc = e.description ? `<p class="text-gray-500 text-sm mt-1 line-clamp-2">${e.description}</p>` : '';
+    return `
+      <div class="card rounded-xl p-4 transition-all duration-150">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap mb-1">
+              <span class="badge badge-luma">LUMA</span>${regBadge}${availBadge}${cal}
+            </div>
+            <h3 class="font-medium text-white leading-snug">${e.name}</h3>
+            <p class="text-sm text-gray-400 mt-1">${e.start_pt} ${venue}</p>
+            ${desc}
+            ${e.url ? `<a href="${e.url}" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 mt-2 inline-block">Open →</a>` : ''}
+          </div>
+          ${e.image_url ? `<img src="${e.image_url}" loading="lazy" class="w-20 h-20 rounded-lg object-cover flex-shrink-0" onerror="this.style.display='none'">` : ''}
+        </div>
+      </div>`;
+  }).join('') + '</div>';
+}
 </script>
 </body>
 </html>"""
