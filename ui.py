@@ -221,17 +221,15 @@ HTML = r"""<!DOCTYPE html>
 
   <!-- Filters -->
   <div class="flex flex-wrap gap-3 mb-6">
-    <div class="flex flex-1 min-w-48">
-      <input id="search" type="text" placeholder="Search events..."
-        class="flex-1 rounded-l-lg rounded-r-none px-3 py-2 text-sm border-r-0"
-        oninput="onSearchInput()"
-        onkeydown="if(event.key==='Enter' && lumaMode) lumaSearch()" />
-      <button id="luma-toggle" onclick="toggleLumaMode()"
-        title="Toggle Luma live search"
-        class="px-3 py-2 text-xs font-semibold rounded-r-lg border border-gray-700 text-gray-500 hover:border-indigo-500 hover:text-indigo-400 transition-colors whitespace-nowrap">
-        Luma
-      </button>
-    </div>
+    <input id="search" type="text" placeholder="Search events..."
+      class="flex-1 min-w-48 rounded-lg px-3 py-2 text-sm"
+      oninput="onSearchInput()"
+      onkeydown="if(event.key==='Enter') { if(document.getElementById('live-search').checked) lumaSearch(); else loadEvents(); }" />
+    <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer select-none whitespace-nowrap">
+      <input id="live-search" type="checkbox" class="accent-indigo-500 w-3.5 h-3.5 cursor-pointer"
+        onchange="onLiveModeChange()" />
+      Live search
+    </label>
     <select id="source" class="rounded-lg px-3 py-2 text-sm" onchange="loadEvents()">
       <option value="all">All sources</option>
       <option value="luma">Luma (all)</option>
@@ -362,38 +360,17 @@ function renderCard(e) {
     </div>`;
 }
 
-let lumaMode = false;
-
-function toggleLumaMode() {
-  lumaMode = !lumaMode;
-  const btn = document.getElementById('luma-toggle');
+function onLiveModeChange() {
+  const live = document.getElementById('live-search').checked;
   const input = document.getElementById('search');
-  const eventsContainer = document.getElementById('events-container');
-  const lumaContainer = document.getElementById('luma-search-results');
-  const datePills = document.getElementById('date-pills');
-
-  if (lumaMode) {
-    btn.classList.add('border-indigo-500', 'text-indigo-400', 'bg-indigo-950');
-    btn.classList.remove('border-gray-700', 'text-gray-500');
-    input.placeholder = 'Search Luma (press Enter)...';
-    input.oninput = null;
-    eventsContainer.classList.add('hidden');
-    datePills.classList.add('hidden');
-    lumaContainer.classList.remove('hidden');
-    if (input.value.trim()) lumaSearch();
-  } else {
-    btn.classList.remove('border-indigo-500', 'text-indigo-400', 'bg-indigo-950');
-    btn.classList.add('border-gray-700', 'text-gray-500');
-    input.placeholder = 'Search events...';
-    input.oninput = onSearchInput;
-    eventsContainer.classList.remove('hidden');
-    datePills.classList.remove('hidden');
-    lumaContainer.classList.add('hidden');
-    lumaContainer.innerHTML = '';
-  }
+  document.getElementById('events-container').classList.toggle('hidden', live);
+  document.getElementById('date-pills').classList.toggle('hidden', live);
+  document.getElementById('luma-search-results').classList.toggle('hidden', !live);
+  input.placeholder = live ? 'Search Luma (press Enter)...' : 'Search events...';
+  if (!live) { document.getElementById('luma-search-results').innerHTML = ''; loadEvents(); }
 }
 
-function onSearchInput() { if (!lumaMode) loadEvents(); }
+function onSearchInput() { if (!document.getElementById('live-search').checked) loadEvents(); }
 
 loadEvents();
 
@@ -402,9 +379,8 @@ async function lumaSearch() {
   const container = document.getElementById('luma-search-results');
   if (!q) { container.innerHTML = ''; return; }
   container.innerHTML = '<p class="text-gray-500 text-sm py-4">Searching Luma...</p>';
-
   const res = await fetch('/api/luma-search?q=' + encodeURIComponent(q));
-  document.getElementById('subtitle').textContent = `Luma live search: "${q}"`;
+  document.getElementById('subtitle').textContent = `Luma: "${q}"`;
   const data = await res.json();
   if (data.error) { container.innerHTML = `<p class="text-red-400 text-sm">${data.error}</p>`; return; }
   if (!data.length) { container.innerHTML = '<p class="text-gray-500 text-sm">No results.</p>'; return; }
