@@ -48,6 +48,8 @@ def normalize(entry: dict) -> tuple[str, dict, dict]:
     geo = event.get("geo_address_info") or {}
     location = geo.get("full_address") or geo.get("city") or ""
     venue = event.get("location", {}).get("name") if isinstance(event.get("location"), dict) else ""
+    city = geo.get("city") or ""
+    location_type = event.get("location_type") or ""  # "offline" | "online" | ""
 
     gi = entry.get("guest_info")
     reg_status = gi.get("approval_status") if isinstance(gi, dict) else None
@@ -63,6 +65,8 @@ def normalize(entry: dict) -> tuple[str, dict, dict]:
         "event_type": event.get("event_type"),
         "image_url": event.get("cover_url"),
         "registration_status": reg_status,
+        "city": city,
+        "location_type": location_type,
     }
     return external_id, fields, entry
 

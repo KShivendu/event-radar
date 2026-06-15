@@ -34,11 +34,12 @@ def init_db():
                 UNIQUE(source, external_id)
             )
         """)
-        # migrate: add column if it doesn't exist yet
-        try:
-            conn.execute("ALTER TABLE events ADD COLUMN registration_status TEXT")
-        except Exception:
-            pass
+        # migrations
+        for col in ["registration_status TEXT", "city TEXT", "location_type TEXT"]:
+            try:
+                conn.execute(f"ALTER TABLE events ADD COLUMN {col}")
+            except Exception:
+                pass
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_start ON events(start_datetime)
         """)
@@ -51,9 +52,11 @@ def upsert_event(source: str, external_id: str, fields: dict, raw: dict):
     with get_conn() as conn:
         conn.execute("""
             INSERT INTO events (source, external_id, name, description, start_datetime,
-                end_datetime, url, location, venue, event_type, image_url, registration_status, raw_json)
+                end_datetime, url, location, venue, event_type, image_url,
+                registration_status, city, location_type, raw_json)
             VALUES (:source, :external_id, :name, :description, :start_datetime,
-                :end_datetime, :url, :location, :venue, :event_type, :image_url, :registration_status, :raw_json)
+                :end_datetime, :url, :location, :venue, :event_type, :image_url,
+                :registration_status, :city, :location_type, :raw_json)
             ON CONFLICT(source, external_id) DO UPDATE SET
                 name = excluded.name,
                 description = excluded.description,
@@ -65,6 +68,8 @@ def upsert_event(source: str, external_id: str, fields: dict, raw: dict):
                 event_type = excluded.event_type,
                 image_url = excluded.image_url,
                 registration_status = excluded.registration_status,
+                city = excluded.city,
+                location_type = excluded.location_type,
                 raw_json = excluded.raw_json,
                 updated_at = datetime('now')
         """, {

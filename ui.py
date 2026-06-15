@@ -36,6 +36,11 @@ def api_events():
     source = request.args.get("source", "all")
     date_filter = request.args.get("date", "")
     search = request.args.get("q", "").lower()
+    location_filter = request.args.get("location", "all")
+
+    BAY_AREA_CITIES = {"San Francisco", "Menlo Park", "San Jose", "Mountain View",
+                       "Sunnyvale", "Palo Alto", "Oakland", "Berkeley", "Redwood City",
+                       "Santa Clara", "Cupertino", "Fremont", "San Mateo"}
 
     with get_conn() as conn:
         query = "SELECT * FROM events WHERE start_datetime >= datetime('now') ORDER BY start_datetime"
@@ -98,6 +103,18 @@ def api_events():
                 continue
         if date_filter and r["date_pt"] != date_filter:
             continue
+        if location_filter != "all":
+            city = r.get("city") or ""
+            lt = r.get("location_type") or ""
+            if location_filter == "online":
+                if lt not in ("online", "zoom", "meet"):
+                    continue
+            elif location_filter == "sf":
+                if city != "San Francisco":
+                    continue
+            elif location_filter == "bayarea":
+                if city not in BAY_AREA_CITIES:
+                    continue
         if search and search not in (r["name"] or "").lower() and search not in (r["description"] or "").lower():
             continue
         result.append(r)
@@ -169,6 +186,12 @@ HTML = r"""<!DOCTYPE html>
       <option value="luma:ai-sf">Luma · AI SF</option>
       <option value="cerebral_valley">Cerebral Valley</option>
     </select>
+    <select id="location" class="rounded-lg px-3 py-2 text-sm" onchange="loadEvents()">
+      <option value="all">All locations</option>
+      <option value="sf">San Francisco</option>
+      <option value="bayarea">Bay Area</option>
+      <option value="online">Online</option>
+    </select>
   </div>
 
   <!-- Date pills -->
@@ -205,7 +228,8 @@ function setDate(d) {
 async function loadEvents() {
   const q = document.getElementById('search').value;
   const source = document.getElementById('source').value;
-  const params = new URLSearchParams({ source, q });
+  const location = document.getElementById('location').value;
+  const params = new URLSearchParams({ source, q, location });
   if (selectedDate) params.set('date', selectedDate);
 
   const res = await fetch('/api/events?' + params);

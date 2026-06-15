@@ -52,6 +52,8 @@ def normalize(event: dict) -> tuple[str, dict, dict]:
         "event_type": event.get("type"),
         "image_url": event.get("imageUrl"),
         "registration_status": None,
+        "city": "San Francisco",
+        "location_type": "offline",
     }
     return str(external_id), fields, event
 
