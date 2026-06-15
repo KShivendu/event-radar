@@ -11,10 +11,11 @@ except ImportError:
     pass
 
 from scraper.db import init_db
-from scraper.sources import luma, cerebral_valley
+from scraper.sources import luma, luma_sf, cerebral_valley
 
 SOURCES = [
     ("luma", luma.scrape),
+    ("luma:sf", luma_sf.scrape),
     ("cerebral_valley", cerebral_valley.scrape),
 ]
 

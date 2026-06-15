@@ -182,6 +182,7 @@ HTML = r"""<!DOCTYPE html>
     <select id="source" class="rounded-lg px-3 py-2 text-sm" onchange="loadEvents()">
       <option value="all">All sources</option>
       <option value="luma">Luma (all)</option>
+      <option value="luma:sf">Luma · SF Discover</option>
       <option value="luma:genai-sf">Luma · GenAI SF</option>
       <option value="luma:ai-sf">Luma · AI SF</option>
       <option value="cerebral_valley">Cerebral Valley</option>
@@ -275,7 +276,7 @@ function renderEvents() {
 }
 
 function renderCard(e) {
-  const sourceLabels = {'luma:genai-sf': 'GENAI SF', 'luma:ai-sf': 'AI SF', 'cerebral_valley': 'CEREBRAL VALLEY'};
+  const sourceLabels = {'luma:sf': 'SF', 'luma:genai-sf': 'GENAI SF', 'luma:ai-sf': 'AI SF', 'cerebral_valley': 'CEREBRAL VALLEY'};
   const calLabel = (e.calendars || [e.source]).map(s => sourceLabels[s] || s).join(' · ');
   const sourceBadge = e.source.startsWith('luma')
     ? `<span class="badge badge-luma">${calLabel}</span>`
