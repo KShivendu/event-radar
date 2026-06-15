@@ -195,6 +195,7 @@ HTML = r"""<!DOCTYPE html>
   .badge-waitlist { background: #2a1f0a; color: #fbbf24; }
   .badge-pending { background: #1a1a2a; color: #a78bfa; }
   .badge-invited { background: #0f1f2a; color: #38bdf8; }
+  .badge-declined { background: #1a0f0f; color: #ef4444; text-decoration: line-through; opacity: 0.7; }
   input, select { background: #1a1a24; border: 1px solid #2a2a38; color: #e8e8f0; }
   input:focus, select:focus { outline: none; border-color: #5b5bff; }
   .date-btn { background: #1a1a24; border: 1px solid #2a2a38; color: #9090b0; cursor: pointer; }
@@ -337,7 +338,7 @@ function renderCard(e) {
   const sourceBadge = e.source.startsWith('luma')
     ? `<span class="badge badge-luma">${calLabel}</span>`
     : `<span class="badge badge-cv">CEREBRAL VALLEY</span>`;
-  const regMap = {approved: ['badge-approved','✓ Going'], waitlist: ['badge-waitlist','⏳ Waitlisted'], pending_approval: ['badge-pending','⏳ Pending'], invited: ['badge-invited','✉ Invited']};
+  const regMap = {approved: ['badge-approved','✓ Going'], waitlist: ['badge-waitlist','⏳ Waitlisted'], pending_approval: ['badge-pending','⏳ Pending'], invited: ['badge-invited','✉ Invited'], declined: ['badge-declined', '✗ Declined']};
   const regBadge = e.registration_status && regMap[e.registration_status]
     ? `<span class="badge ${regMap[e.registration_status][0]}">${regMap[e.registration_status][1]}</span>` : '';
   const typeBadge = e.event_type ? `<span class="badge" style="background:#1a2a1a;color:#86efac">${e.event_type.toUpperCase()}</span>` : '';
@@ -386,7 +387,7 @@ async function lumaSearch() {
   if (data.error) { container.innerHTML = `<p class="text-red-400 text-sm">${data.error}</p>`; return; }
   if (!data.length) { container.innerHTML = '<p class="text-gray-500 text-sm">No results.</p>'; return; }
 
-  const regMap = {approved: ['badge-approved','✓ Going'], waitlist: ['badge-waitlist','⏳ Waitlisted'], pending_approval: ['badge-pending','⏳ Pending'], invited: ['badge-invited','✉ Invited']};
+  const regMap = {approved: ['badge-approved','✓ Going'], waitlist: ['badge-waitlist','⏳ Waitlisted'], pending_approval: ['badge-pending','⏳ Pending'], invited: ['badge-invited','✉ Invited'], declined: ['badge-declined', '✗ Declined']};
   const availMap = {'sold-out': 'Sold out', 'waitlist': 'Waitlist open'};
 
   container.innerHTML = '<div class="space-y-3">' + data.map(e => {
@@ -427,4 +428,4 @@ def index():
 if __name__ == "__main__":
     import webbrowser, threading
     threading.Timer(0.8, lambda: webbrowser.open("http://localhost:5050")).start()
-    app.run(port=5050, debug=False)
+    app.run(host="0.0.0.0", port=5050, debug=False)
