@@ -1,5 +1,5 @@
 [
-  "agents",
+  "agent",
   "MCP",
   "RAG",
   "vector database",
@@ -12,21 +12,20 @@
   "demo night",
   "pitch event",
   "AI pricing",
-  "distributed systems",
+  "distributed system",
   "inference",
   "embedding",
   "agentic",
   "observability",
-  "evals",
+  "eval",
   "retrieval",
   "orchestration",
-  "embeddings",
   "multimodal",
   "quantization",
   "finetuning",
   "grounding",
   "tracing",
-  "benchmarks",
+  "benchmark",
   "reasoning",
-  "founders"
+  "founder"
 ]
