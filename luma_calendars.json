@@ -1,0 +1,172 @@
+[
+  {
+    "id": "cal-UgUJeak6qgQ3piH",
+    "slug": "9030club",
+    "name": "90/30 Club"
+  },
+  {
+    "id": "cal-2a2noyFl2TAFKXm",
+    "slug": "agentcommunity",
+    "name": ".agent community"
+  },
+  {
+    "id": "cal-Lv1pgYv5ITFR4tC",
+    "slug": "agi-house",
+    "name": "Ascension - by AGI House SF"
+  },
+  {
+    "id": "cal-l76607AsonZ1F7F",
+    "slug": "baseten",
+    "name": "Baseten Events"
+  },
+  {
+    "id": "cal-2BuL8o8ylVizd6x",
+    "slug": "bayareafoundersclub",
+    "name": "Bay Area Founders Club"
+  },
+  {
+    "id": "cal-JTdFQadEz0AOxyV",
+    "slug": "genai-sf",
+    "name": "Bond AI - San Francisco and Bay Area"
+  },
+  {
+    "id": "cal-8vX4xl06u6TTaew",
+    "slug": "braintrustdata",
+    "name": "Braintrust"
+  },
+  {
+    "id": "cal-bCU1DaydlGSsazG",
+    "slug": "brderless",
+    "name": "Brderless"
+  },
+  {
+    "id": "cal-kC1rltFkxqfbHcB",
+    "slug": "cerebralvalley_",
+    "name": "Cerebral Valley"
+  },
+  {
+    "id": "cal-TqlnE35lpsiFp1N",
+    "slug": "composiohq",
+    "name": "Composio Events"
+  },
+  {
+    "id": "cal-3Lr0j2AukKKxi6I",
+    "slug": "caisc2026",
+    "name": "Conference for AI Scientists (CAISc) 2026"
+  },
+  {
+    "id": "cal-1rx3HbqasZIedBh",
+    "slug": "",
+    "name": "Exa Events"
+  },
+  {
+    "id": "cal-Fd0raiQfP0NyKEC",
+    "slug": "ff-balance",
+    "name": "[FF]: Balance"
+  },
+  {
+    "id": "cal-UiCqx8AuC0MygKD",
+    "slug": "founderscommon",
+    "name": "Founders Common"
+  },
+  {
+    "id": "cal-4YIfItekJebxOoC",
+    "slug": "hsr-founders-club-events",
+    "name": "HSR Founders Club - Events Calendar"
+  },
+  {
+    "id": "cal-xJ9LyR9WcKTjEMQ",
+    "slug": "hsrhackerhouse",
+    "name": "hsrhackerhouse"
+  },
+  {
+    "id": "cal-mc9ZW5C3TzHDv6L",
+    "slug": "ls",
+    "name": "Latent.Space (Paper Club, AI in Action, Meetups & Confs)"
+  },
+  {
+    "id": "cal-ftFzB9u29zBCzLC",
+    "slug": "llamaindex",
+    "name": "LlamaIndex Community"
+  },
+  {
+    "id": "cal-PCTbemcMtu6Xnk4",
+    "slug": "lossfunk",
+    "name": "Lossfunk Event Calendar"
+  },
+  {
+    "id": "cal-lYa2810srHvkQRC",
+    "slug": "modal-labs",
+    "name": "Modal"
+  },
+  {
+    "id": "cal-PxIybrH562tegOG",
+    "slug": "",
+    "name": "Niyo Global Community Events"
+  },
+  {
+    "id": "cal-RECcDoH3YZGpLeD",
+    "slug": "",
+    "name": "Qdrant"
+  },
+  {
+    "id": "cal-NSUcVzx2gNPB8F5",
+    "slug": "recursecenter",
+    "name": "Recurse Center"
+  },
+  {
+    "id": "cal-YWeNOlQm4LcU1Yk",
+    "slug": "sf-mlops-community",
+    "name": "San Francisco MLOps Community"
+  },
+  {
+    "id": "cal-m6Un5hAyjYpabSm",
+    "slug": "sampleappai",
+    "name": "Sapient"
+  },
+  {
+    "id": "cal-S7gDcd9Akzu62RD",
+    "slug": "sf-builders-collective",
+    "name": "[SF] Builders Collective"
+  },
+  {
+    "id": "cal-rrFhXpfUN5QvZs8",
+    "slug": "sf-systems",
+    "name": "SF Systems Club"
+  },
+  {
+    "id": "cal-pXMLqU05Slt3XYm",
+    "slug": "southbaysystems",
+    "name": "South Bay Systems"
+  },
+  {
+    "id": "cal-E74MDlDKBaeAwXK",
+    "slug": "genai-collective",
+    "name": "The AI Collective"
+  },
+  {
+    "id": "cal-EVJ0XV6EJegxAT7",
+    "slug": "tokensand",
+    "name": "tokens&"
+  },
+  {
+    "id": "cal-9jzVoVZclDCewDU",
+    "slug": "vapi_events",
+    "name": "Vapi"
+  },
+  {
+    "id": "cal-TmA5yec4z2YUAuY",
+    "slug": "womeninaiorg",
+    "name": "Women in AI"
+  },
+  {
+    "id": "cal-H8sRFTIm4L5tXIl",
+    "slug": "",
+    "name": "World Labs"
+  },
+  {
+    "id": "cal-IfxWE7hDiIiYz9G",
+    "slug": "you-know-for-search",
+    "name": "You Know, for Search"
+  }
+]

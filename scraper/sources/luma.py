@@ -1,10 +1,23 @@
+import json
 import os
+from pathlib import Path
+
 import requests
 
-CALENDARS = [
-    {"id": "cal-JTdFQadEz0AOxyV", "slug": "genai-sf", "source": "luma:genai-sf"},
-    {"id": "cal-F4B0wdJsEABsvTu", "slug": "ai-sf",    "source": "luma:ai-sf"},
+CALENDARS_FILE = Path(__file__).parent.parent.parent / "luma_calendars.json"
+
+# Fallback hardcoded list — used when luma_calendars.json is absent (stale cookie, first run)
+FALLBACK_CALENDARS = [
+    {"id": "cal-JTdFQadEz0AOxyV", "slug": "genai-sf", "name": "Bond AI - San Francisco and Bay Area"},
+    {"id": "cal-F4B0wdJsEABsvTu", "slug": "ai-sf",    "name": "AI SF"},
 ]
+
+
+def load_calendars() -> list[dict]:
+    if CALENDARS_FILE.exists():
+        return json.loads(CALENDARS_FILE.read_text())
+    print("[luma] luma_calendars.json not found, using fallback list")
+    return FALLBACK_CALENDARS
 
 
 def fetch_calendar(calendar_id: str, slug: str) -> list[dict]:
@@ -56,22 +69,24 @@ def normalize(entry: dict) -> tuple[str, dict, dict]:
 
 def scrape() -> int:
     from scraper.db import upsert_event
+    calendars = load_calendars()
     total = 0
-    for cal in CALENDARS:
+    for cal in calendars:
+        source = f"luma:{cal['slug']}" if cal.get("slug") else f"luma:{cal['id']}"
         try:
-            entries = fetch_calendar(cal["id"], cal["slug"])
+            entries = fetch_calendar(cal["id"], cal.get("slug", ""))
             count = 0
             for entry in entries:
                 try:
                     external_id, fields, raw = normalize(entry)
                     if not external_id:
                         continue
-                    upsert_event(cal["source"], external_id, fields, raw)
+                    upsert_event(source, external_id, fields, raw)
                     count += 1
                 except Exception as e:
-                    print(f"[{cal['source']}] error on entry: {e}")
-            print(f"  [{cal['source']}] {count} events upserted")
+                    print(f"  [{source}] error on entry: {e}")
+            print(f"  [{source}] {count} events upserted")
             total += count
         except Exception as e:
-            print(f"  [{cal['source']}] FAILED: {e}")
+            print(f"  [{source}] FAILED: {e}")
     return total
