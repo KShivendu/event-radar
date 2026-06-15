@@ -223,8 +223,8 @@ HTML = r"""<!DOCTYPE html>
   <div class="flex flex-wrap gap-3 mb-6">
     <input id="search" type="text" placeholder="Search events..."
       class="flex-1 min-w-48 rounded-lg px-3 py-2 text-sm"
-      oninput="onSearchInput()"
-      onkeydown="if(event.key==='Enter') { if(document.getElementById('live-search').checked) lumaSearch(); else loadEvents(); }" />
+      oninput="if(!document.getElementById('live-search').checked) loadEvents()"
+      onkeydown="if(event.key==='Enter') { event.preventDefault(); document.getElementById('live-search').checked ? lumaSearch() : loadEvents(); }" />
     <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer select-none whitespace-nowrap">
       <input id="live-search" type="checkbox" class="accent-indigo-500 w-3.5 h-3.5 cursor-pointer"
         onchange="onLiveModeChange()" />
@@ -370,7 +370,6 @@ function onLiveModeChange() {
   if (!live) { document.getElementById('luma-search-results').innerHTML = ''; loadEvents(); }
 }
 
-function onSearchInput() { if (!document.getElementById('live-search').checked) loadEvents(); }
 
 loadEvents();
 
