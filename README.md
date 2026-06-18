@@ -11,6 +11,7 @@ A personal event scraper and local web UI for tracking SF tech events. Pulls fro
 - **Cross-source deduplication** — same event from multiple calendars or sources shown once
 - **Keyword search scraper** — runs configurable keywords against Luma search, stores results
 - **Keyword suggestions** — NLP-based script (spaCy + TF-IDF) to surface new search terms from existing data
+- **People to talk to** — for any event, collect the hosts + featured guests (with LinkedIn/Twitter), then rank them against your profile with Claude and get an icebreaker for each
 - **Local web UI** — dark-themed, filters by date / source / location, live Luma search panel
 - **Runs every 6 hours** via cron
 
@@ -53,6 +54,37 @@ python3 suggest_keywords.py
 | `luma:my-events` | Events you've RSVP'd / waitlisted / been invited to |
 | `luma:search` | Keyword search results (see `search_keywords.json`) |
 | `cerebral_valley` | Cerebral Valley SF events |
+
+## People to talk to
+
+For a given meetup, build a ranked list of who's worth your time — hosts and the
+featured guests Luma shows publicly — each scored against your profile with an
+icebreaker drafted by Claude.
+
+```bash
+# One-time: set up your profile
+cp profile.example.json profile.json   # edit with your role, goals, interests
+
+# Accepts a lu.ma URL, a slug, or an evt- id
+python3 find_people.py https://lu.ma/yj5uvoei
+python3 find_people.py evt-oiXR0BSLzOsOgtn --web    # let Claude web-search people first
+python3 find_people.py https://lu.ma/yj5uvoei --no-rank   # just collect, no LLM
+```
+
+**Ranking backend** is auto-selected:
+- If `ANTHROPIC_API_KEY` is set (e.g. in `.env`), it uses the Anthropic SDK — and `--web` lets Claude web-search people before scoring.
+- Otherwise it falls back to the local **`claude` CLI** (Claude Code), which is already authenticated — so ranking works with no API key. (`--web` needs the SDK.)
+
+How it works:
+- **Collection** uses Luma's public `event/get` endpoint — **no cookie needed**. It
+  returns all hosts plus up to ~10 *featured* guests (the "Going" avatars), each with
+  name, short bio, and social handles. The full attendee roster is host-only and not
+  exposed here.
+- **Ranking** sends that list plus your `profile.json` to Claude, which scores each
+  person 1–10, explains the fit, and drafts an opener. Results are stored in the
+  `people` table of `events.db`.
+
+`profile.json` and the cookie/key live in gitignored files.
 
 ## Cron
 

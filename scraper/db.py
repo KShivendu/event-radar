@@ -46,6 +46,88 @@ def init_db():
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_source ON events(source)
         """)
+        # People at an event — hosts and publicly-visible (featured) guests.
+        # Luma exposes up to ~10 featured guests per event without auth, plus all hosts.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS people (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_api_id TEXT NOT NULL,
+                event_url TEXT,
+                event_name TEXT,
+                person_api_id TEXT NOT NULL,
+                role TEXT,                    -- 'host' | 'guest'
+                name TEXT,
+                first_name TEXT,
+                last_name TEXT,
+                bio_short TEXT,
+                avatar_url TEXT,
+                username TEXT,
+                website TEXT,
+                twitter_handle TEXT,
+                linkedin_handle TEXT,
+                instagram_handle TEXT,
+                is_verified INTEGER,
+                last_online_at TEXT,
+                rank_score REAL,              -- LLM relevance score (filled by enrich.py)
+                rank_reason TEXT,
+                icebreaker TEXT,
+                raw_json TEXT,
+                first_seen_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                UNIQUE(event_api_id, person_api_id)
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_people_event ON people(event_api_id)
+        """)
+
+
+def upsert_person(fields: dict):
+    """Insert or update a person row. Preserves LLM ranking columns when re-scraping
+    (the scraper passes them as None; COALESCE keeps any previously-stored value)."""
+    cols = ["event_api_id", "event_url", "event_name", "person_api_id", "role",
+            "name", "first_name", "last_name", "bio_short", "avatar_url", "username",
+            "website", "twitter_handle", "linkedin_handle", "instagram_handle",
+            "is_verified", "last_online_at", "raw_json"]
+    row = {c: fields.get(c) for c in cols}
+    with get_conn() as conn:
+        conn.execute(f"""
+            INSERT INTO people ({", ".join(cols)})
+            VALUES ({", ".join(":" + c for c in cols)})
+            ON CONFLICT(event_api_id, person_api_id) DO UPDATE SET
+                role = excluded.role,
+                name = excluded.name,
+                first_name = excluded.first_name,
+                last_name = excluded.last_name,
+                bio_short = excluded.bio_short,
+                avatar_url = excluded.avatar_url,
+                username = excluded.username,
+                website = excluded.website,
+                twitter_handle = excluded.twitter_handle,
+                linkedin_handle = excluded.linkedin_handle,
+                instagram_handle = excluded.instagram_handle,
+                is_verified = excluded.is_verified,
+                last_online_at = excluded.last_online_at,
+                raw_json = excluded.raw_json,
+                updated_at = datetime('now')
+        """, row)
+
+
+def save_ranking(event_api_id: str, person_api_id: str, score: float, reason: str, icebreaker: str):
+    with get_conn() as conn:
+        conn.execute("""
+            UPDATE people SET rank_score = ?, rank_reason = ?, icebreaker = ?, updated_at = datetime('now')
+            WHERE event_api_id = ? AND person_api_id = ?
+        """, (score, reason, icebreaker, event_api_id, person_api_id))
+
+
+def get_event_people(event_api_id: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM people WHERE event_api_id = ? ORDER BY rank_score DESC NULLS LAST, role, name",
+            (event_api_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def upsert_event(source: str, external_id: str, fields: dict, raw: dict):
