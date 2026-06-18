@@ -3,6 +3,9 @@ requests>=2.31.0
 python-dotenv>=1.0.0
 flask>=3.0.0
 
+# Required for LLM ranking in find_people.py (enrich.py)
+anthropic>=0.49.0
+
 # Optional — only needed for suggest_keywords.py
 # pip install spacy && python3 -m spacy download en_core_web_sm
 # spacy>=3.0.0

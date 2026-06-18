@@ -1,0 +1,14 @@
+{
+  "name": "Your Name",
+  "headline": "What you do, in one line — e.g. 'DevRel at Qdrant (open-source vector database)'",
+  "goals": "What you want out of this meetup — e.g. 'meet AI engineers building RAG / agents who might adopt a vector DB, and founders in the AI-infra space'",
+  "interests": [
+    "vector search",
+    "RAG",
+    "AI agents",
+    "ML infrastructure",
+    "developer tools",
+    "open source"
+  ],
+  "avoid": "Anyone whose work is clearly unrelated (e.g. consumer social, crypto trading)."
+}
