@@ -62,9 +62,8 @@ featured guests Luma shows publicly — each scored against your profile with an
 icebreaker drafted by Claude.
 
 ```bash
-# One-time: set up your profile and (for ranking) an API key
+# One-time: set up your profile
 cp profile.example.json profile.json   # edit with your role, goals, interests
-echo "ANTHROPIC_API_KEY=sk-ant-..." >> .env
 
 # Accepts a lu.ma URL, a slug, or an evt- id
 python3 find_people.py https://lu.ma/yj5uvoei
@@ -72,14 +71,18 @@ python3 find_people.py evt-oiXR0BSLzOsOgtn --web    # let Claude web-search peop
 python3 find_people.py https://lu.ma/yj5uvoei --no-rank   # just collect, no LLM
 ```
 
+**Ranking backend** is auto-selected:
+- If `ANTHROPIC_API_KEY` is set (e.g. in `.env`), it uses the Anthropic SDK — and `--web` lets Claude web-search people before scoring.
+- Otherwise it falls back to the local **`claude` CLI** (Claude Code), which is already authenticated — so ranking works with no API key. (`--web` needs the SDK.)
+
 How it works:
 - **Collection** uses Luma's public `event/get` endpoint — **no cookie needed**. It
   returns all hosts plus up to ~10 *featured* guests (the "Going" avatars), each with
   name, short bio, and social handles. The full attendee roster is host-only and not
   exposed here.
-- **Ranking** sends that list plus your `profile.json` to Claude (`claude-opus-4-8`),
-  which scores each person 1–10, explains the fit, and drafts an opener. Results are
-  stored in the `people` table of `events.db`.
+- **Ranking** sends that list plus your `profile.json` to Claude, which scores each
+  person 1–10, explains the fit, and drafts an opener. Results are stored in the
+  `people` table of `events.db`.
 
 `profile.json` and the cookie/key live in gitignored files.
 

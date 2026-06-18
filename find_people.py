@@ -53,10 +53,10 @@ def main():
 
     if not args.no_rank and people:
         try:
-            from enrich import rank
+            from enrich import enrich_people
             from scraper.db import save_ranking
             print("Ranking with Claude" + (" (+ web search)" if args.web else "") + "...\n")
-            people = rank(summary, people, use_web=args.web)
+            people = enrich_people(summary, people, use_web=args.web)
             for p in people:
                 if p.get("rank_score") is not None:
                     save_ranking(summary["event_api_id"], p["person_api_id"],

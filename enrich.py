@@ -3,16 +3,24 @@
 an icebreaker for each — using Claude.
 
 Input is whatever Luma exposes publicly (name, role, short bio, social handles).
-Your side of the match comes from profile.json (copy profile.example.json). With
---web, Claude may use web search to pull extra context on notable people before ranking.
+Your side of the match comes from profile.json (copy profile.example.json).
+
+Two backends, auto-selected by enrich_people():
+  - SDK  — used when ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN is set. Supports --web
+           (Claude web-searches people before ranking).
+  - CLI  — falls back to the local `claude` CLI (Claude Code), which is already
+           authenticated, so no API key is needed. No web search in this mode.
 """
 import json
 import os
+import shutil
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).parent
 PROFILE_FILE = ROOT / "profile.json"
 MODEL = "claude-opus-4-8"
+CLI_TIMEOUT = 300
 
 
 def load_profile() -> dict:
@@ -71,48 +79,23 @@ SYSTEM = (
 )
 
 
-def rank(event: dict, people: list[dict], use_web: bool = False) -> list[dict]:
-    """Return the people list with rank_score/rank_reason/icebreaker filled in,
-    sorted best-first. Requires ANTHROPIC_API_KEY."""
-    import anthropic
+_JSON_ONLY = (
+    '\n\nReturn ONLY a JSON object: {"rankings":[{"id","score","reason","icebreaker"}]}. '
+    "Copy each id verbatim. No prose, no markdown fences."
+)
 
+
+def _build_user_content(event: dict, cards: list[dict]) -> str:
     profile = load_profile()
-    cards = [_person_card(p) for p in people if p.get("person_api_id")]
-    if not cards:
-        return people
-
-    user_content = (
+    return (
         f"# Your profile\n{json.dumps(profile, indent=2)}\n\n"
         f"# Event\n{event.get('event_name')} ({event.get('event_url')}) — "
         f"{event.get('guest_count')} registered\n\n"
         f"# People ({len(cards)})\n{json.dumps(cards, indent=2)}"
     )
 
-    client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
-    kwargs = dict(
-        model=MODEL,
-        max_tokens=8000,
-        system=SYSTEM,
-        thinking={"type": "adaptive"},
-        messages=[{"role": "user", "content": user_content}],
-    )
-    if use_web:
-        # Let Claude look people up before scoring. With a tool available the
-        # response isn't constrained to the schema, so we ask for raw JSON instead.
-        kwargs["tools"] = [{"type": "web_search_20260209", "name": "web_search"}]
-        kwargs["system"] = SYSTEM + (
-            "\n\nReturn ONLY a JSON object matching: "
-            '{"rankings":[{"id","score","reason","icebreaker"}]} with no other text.'
-        )
-        resp = client.messages.create(**kwargs)
-        text = next((b.text for b in resp.content if b.type == "text"), "")
-        rankings = json.loads(_extract_json(text))["rankings"]
-    else:
-        kwargs["output_config"] = {"format": {"type": "json_schema", "schema": _build_schema()}}
-        resp = client.messages.create(**kwargs)
-        text = next((b.text for b in resp.content if b.type == "text"), "")
-        rankings = json.loads(text)["rankings"]
 
+def _apply_rankings(people: list[dict], rankings: list[dict]) -> list[dict]:
     by_id = {r["id"]: r for r in rankings}
     for p in people:
         r = by_id.get(p.get("person_api_id"))
@@ -125,9 +108,71 @@ def rank(event: dict, people: list[dict], use_web: bool = False) -> list[dict]:
 
 
 def _extract_json(text: str) -> str:
-    """Pull the first {...} object out of a text blob (web mode isn't schema-constrained)."""
+    """Pull the first {...} object out of a text blob (CLI / web output isn't schema-constrained)."""
     start = text.find("{")
     end = text.rfind("}")
     if start == -1 or end == -1:
         raise ValueError(f"No JSON object in model response: {text[:200]}")
     return text[start : end + 1]
+
+
+def enrich_people(event: dict, people: list[dict], use_web: bool = False) -> list[dict]:
+    """Rank people, auto-selecting a backend: the API SDK when a key is set,
+    otherwise the local `claude` CLI. --web requires the SDK backend."""
+    if not [p for p in people if p.get("person_api_id")]:
+        return people
+    if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+        return rank(event, people, use_web=use_web)
+    if use_web:
+        raise RuntimeError("--web needs an API key (ANTHROPIC_API_KEY); the claude CLI backend can't web-search here.")
+    if shutil.which("claude"):
+        return rank_via_cli(event, people)
+    raise RuntimeError("No ranking backend: set ANTHROPIC_API_KEY, or install the `claude` CLI.")
+
+
+def rank(event: dict, people: list[dict], use_web: bool = False) -> list[dict]:
+    """SDK backend. Fills rank_score/rank_reason/icebreaker, sorted best-first.
+    Requires ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN."""
+    import anthropic
+
+    cards = [_person_card(p) for p in people if p.get("person_api_id")]
+    user_content = _build_user_content(event, cards)
+
+    client = anthropic.Anthropic()  # reads credentials from env
+    kwargs = dict(
+        model=MODEL,
+        max_tokens=8000,
+        system=SYSTEM,
+        thinking={"type": "adaptive"},
+        messages=[{"role": "user", "content": user_content}],
+    )
+    if use_web:
+        # With a tool available the response isn't schema-constrained, so ask for raw JSON.
+        kwargs["tools"] = [{"type": "web_search_20260209", "name": "web_search"}]
+        kwargs["system"] = SYSTEM + _JSON_ONLY
+        resp = client.messages.create(**kwargs)
+        text = next((b.text for b in resp.content if b.type == "text"), "")
+        rankings = json.loads(_extract_json(text))["rankings"]
+    else:
+        kwargs["output_config"] = {"format": {"type": "json_schema", "schema": _build_schema()}}
+        resp = client.messages.create(**kwargs)
+        text = next((b.text for b in resp.content if b.type == "text"), "")
+        rankings = json.loads(text)["rankings"]
+
+    return _apply_rankings(people, rankings)
+
+
+def rank_via_cli(event: dict, people: list[dict]) -> list[dict]:
+    """Fallback backend using the local `claude` CLI (already authenticated by Claude Code).
+    No API key required; no web search."""
+    cards = [_person_card(p) for p in people if p.get("person_api_id")]
+    prompt = SYSTEM + _JSON_ONLY + "\n\n" + _build_user_content(event, cards)
+
+    proc = subprocess.run(
+        ["claude", "-p"], input=prompt,
+        capture_output=True, text=True, timeout=CLI_TIMEOUT,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"claude CLI failed (rc={proc.returncode}): {proc.stderr[:300]}")
+    rankings = json.loads(_extract_json(proc.stdout))["rankings"]
+    return _apply_rankings(people, rankings)
