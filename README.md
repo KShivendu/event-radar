@@ -97,6 +97,12 @@ so matches stay high-precision (it correctly rejects same-name-different-person 
 accounts). Results are stored on the `people` row (`github_handle`, `current_role`,
 `discovered_links`, `contact_source`).
 
+**Faces** are resolved by a best-first cascade (the URL is stored, not downloaded):
+Luma avatar → GitHub avatar (`github.com/<login>.png`, using the handle we resolved) →
+Gravatar (when an email is known). Each candidate is verified to actually serve an image,
+and Luma's default-placeholder avatars are detected and skipped. Stored as `face_url` /
+`face_source`.
+
 How it works:
 - **Collection** uses Luma's public `event/get` endpoint — **no cookie needed**. It
   returns all hosts plus up to ~10 *featured* guests (the "Going" avatars), each with

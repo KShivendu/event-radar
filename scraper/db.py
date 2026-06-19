@@ -82,7 +82,8 @@ def init_db():
         """)
         # contact-enrichment columns (filled by enrich_contacts.py)
         for col in ["github_handle TEXT", "github_company TEXT", "current_role TEXT",
-                    "discovered_links TEXT", "contact_source TEXT", "contact_enriched_at TEXT"]:
+                    "discovered_links TEXT", "contact_source TEXT", "contact_enriched_at TEXT",
+                    "face_url TEXT", "face_source TEXT"]:
             try:
                 conn.execute(f"ALTER TABLE people ADD COLUMN {col}")
             except Exception:
@@ -92,7 +93,8 @@ def init_db():
 def save_contact(event_api_id: str, person_api_id: str, fields: dict):
     """Update contact-enrichment columns for a person. Only writes keys present in `fields`."""
     allowed = {"github_handle", "github_company", "current_role", "discovered_links",
-               "website", "linkedin_handle", "twitter_handle", "contact_source"}
+               "website", "linkedin_handle", "twitter_handle", "contact_source",
+               "face_url", "face_source"}
     sets = {k: v for k, v in fields.items() if k in allowed}
     if not sets:
         return
