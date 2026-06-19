@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Local web UI for browsing SF events from events.db"""
 import json
+import threading
 from datetime import datetime, timezone
 import zoneinfo
 from flask import Flask, request, jsonify, render_template_string
@@ -9,6 +10,9 @@ from scraper.db import get_conn, get_event_people, init_db
 app = Flask(__name__)
 init_db()
 PT = zoneinfo.ZoneInfo("America/Los_Angeles")
+
+# tracks which events have an active ranking job: event_api_id -> "running" | "done" | "error: ..."
+_rank_status: dict[str, str] = {}
 
 
 def to_pt(dt_str: str | None) -> str:
@@ -199,17 +203,47 @@ def api_people():
 
 @app.route("/api/people/find", methods=["POST"])
 def api_people_find():
-    """Run the full pipeline for an event: collect → enrich contacts + faces → rank.
-    Web search is left off here to keep the request responsive."""
+    """Collect people synchronously, then rank in the background.
+    Returns collected (unranked) people immediately."""
     event = request.args.get("event", "")
     if not event:
         return jsonify({"error": "missing event"}), 400
     try:
-        from pipeline import find_people
-        _, people = find_people(event, contacts=True, contacts_web=False, rank=True, rank_web=False)
+        from scraper.sources.luma_people import collect
+        summary = collect(event)
+        eid = summary["event_api_id"]
+        people = summary["people"]
     except Exception as e:
         return jsonify({"error": str(e)}), 502
-    return jsonify([_person_public(p) for p in people])
+
+    # kick off enrich + rank in background
+    if _rank_status.get(eid) != "running":
+        _rank_status[eid] = "running"
+        def _rank():
+            try:
+                import enrich, enrich_contacts
+                from scraper.db import save_ranking
+                for p in people:
+                    enrich_contacts.enrich_person(p, use_web=False)
+                    enrich_contacts.save_person(eid, p)
+                ranked = enrich.enrich_people(summary, people, use_web=False)
+                for p in ranked:
+                    if p.get("rank_score") is not None:
+                        save_ranking(eid, p["person_api_id"], p["rank_score"],
+                                     p["rank_reason"], p["icebreaker"])
+                _rank_status[eid] = "done"
+            except Exception as e:
+                _rank_status[eid] = f"error: {e}"
+        threading.Thread(target=_rank, daemon=True).start()
+
+    rows = get_event_people(eid)
+    return jsonify([_person_public(p) for p in rows])
+
+
+@app.route("/api/people/rank-status")
+def api_people_rank_status():
+    eid = request.args.get("event", "")
+    return jsonify({"status": _rank_status.get(eid, "idle")})
 
 
 @app.route("/api/dates")
@@ -470,12 +504,36 @@ function closePeople() {
 
 function findPeople() {
   const body = document.getElementById('people-body');
-  body.innerHTML = '<p class="text-gray-500 text-sm py-6 text-center">Collecting hosts + guests, enriching, and ranking with Claude… (~1 min)</p>';
+  body.innerHTML = '<p class="text-gray-500 text-sm py-6 text-center">Collecting people…</p>';
   fetch('/api/people/find?event=' + encodeURIComponent(peopleEventId), {method: 'POST'})
     .then(r => r.json())
     .then(d => {
       if (d.error) { body.innerHTML = `<p class="text-red-400 text-sm py-6 text-center">${esc(d.error)}</p>`; return; }
       renderPeople(d);
+      pollRankStatus();
+    });
+}
+
+function pollRankStatus() {
+  fetch('/api/people/rank-status?event=' + encodeURIComponent(peopleEventId))
+    .then(r => r.json())
+    .then(d => {
+      const body = document.getElementById('people-body');
+      if (!body) return;
+      if (d.status === 'running') {
+        const banner = document.getElementById('rank-banner');
+        if (!banner) {
+          const b = document.createElement('p');
+          b.id = 'rank-banner';
+          b.className = 'text-xs text-indigo-400 text-center mb-3';
+          b.textContent = 'Ranking with Claude in background…';
+          body.prepend(b);
+        }
+        setTimeout(pollRankStatus, 4000);
+      } else if (d.status === 'done') {
+        fetch('/api/people?event=' + encodeURIComponent(peopleEventId))
+          .then(r => r.json()).then(renderPeople);
+      }
     });
 }
 
