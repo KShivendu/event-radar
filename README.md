@@ -75,6 +75,28 @@ python3 find_people.py https://lu.ma/yj5uvoei --no-rank   # just collect, no LLM
 - If `ANTHROPIC_API_KEY` is set (e.g. in `.env`), it uses the Anthropic SDK — and `--web` lets Claude web-search people before scoring.
 - Otherwise it falls back to the local **`claude` CLI** (Claude Code), which is already authenticated — so ranking works with no API key. (`--web` needs the SDK.)
 
+### Contact enrichment (GitHub / site / current role)
+
+Luma already gives us each person's LinkedIn, Twitter, Instagram, and website. The gaps
+are **GitHub** and **current role**, which `enrich_contacts.py` fills, cheapest-first:
+
+```bash
+python3 enrich_contacts.py https://lu.ma/yj5uvoei      # free tier + Claude web fallback
+python3 enrich_contacts.py evt-... --no-web            # free tier only
+```
+
+1. **Luma handles** → canonical URLs (free, already have them)
+2. **Their own website** → fetched and scraped for a GitHub link (free)
+3. **GitHub API** → search by name, accept a match only if `twitter_username` or `blog`
+   matches an anchor we already trust (set `GITHUB_TOKEN`; the API needs auth)
+4. **Web fallback** → Claude (web search) finds/verifies the gaps + a one-line current role,
+   cross-checking against the known handles and leaving fields null when unsure
+
+Identity is always anchored on the globally-unique Twitter handle / website Luma provides,
+so matches stay high-precision (it correctly rejects same-name-different-person GitHub
+accounts). Results are stored on the `people` row (`github_handle`, `current_role`,
+`discovered_links`, `contact_source`).
+
 How it works:
 - **Collection** uses Luma's public `event/get` endpoint — **no cookie needed**. It
   returns all hosts plus up to ~10 *featured* guests (the "Going" avatars), each with

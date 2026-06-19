@@ -80,6 +80,30 @@ def init_db():
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_people_event ON people(event_api_id)
         """)
+        # contact-enrichment columns (filled by enrich_contacts.py)
+        for col in ["github_handle TEXT", "github_company TEXT", "current_role TEXT",
+                    "discovered_links TEXT", "contact_source TEXT", "contact_enriched_at TEXT"]:
+            try:
+                conn.execute(f"ALTER TABLE people ADD COLUMN {col}")
+            except Exception:
+                pass
+
+
+def save_contact(event_api_id: str, person_api_id: str, fields: dict):
+    """Update contact-enrichment columns for a person. Only writes keys present in `fields`."""
+    allowed = {"github_handle", "github_company", "current_role", "discovered_links",
+               "website", "linkedin_handle", "twitter_handle", "contact_source"}
+    sets = {k: v for k, v in fields.items() if k in allowed}
+    if not sets:
+        return
+    assignments = ", ".join(f"{k} = :{k}" for k in sets)
+    sets.update({"eid": event_api_id, "pid": person_api_id})
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE people SET {assignments}, contact_enriched_at = datetime('now') "
+            f"WHERE event_api_id = :eid AND person_api_id = :pid",
+            sets,
+        )
 
 
 def upsert_person(fields: dict):
