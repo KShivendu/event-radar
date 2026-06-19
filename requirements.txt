@@ -9,3 +9,10 @@ anthropic>=0.49.0
 # Optional — only needed for suggest_keywords.py
 # pip install spacy && python3 -m spacy download en_core_web_sm
 # spacy>=3.0.0
+
+# Optional — only needed for face_prep.py / face_search.py
+# pip install insightface onnxruntime opencv-python pillow
+# insightface>=0.7
+# onnxruntime>=1.16
+# opencv-python>=4.8
+# pillow>=10.0
