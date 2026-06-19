@@ -722,10 +722,18 @@ def api_face_prep():
 @app.route("/api/face/prep-status")
 def api_face_prep_status():
     event_id = request.args.get("event", "")
-    import pathlib
+    import pathlib, numpy as np
     npz = pathlib.Path("faces") / f"{event_id}.npz"
-    status = _face_prep_status.get(event_id, "done" if npz.exists() else "idle")
-    return jsonify({"status": status})
+    status = _face_prep_status.get(event_id)
+    if status:
+        return jsonify({"status": status})
+    if npz.exists():
+        try:
+            count = len(np.load(npz, allow_pickle=True)["embeddings"])
+            return jsonify({"status": f"done:{count}"})
+        except Exception:
+            pass
+    return jsonify({"status": "idle"})
 
 
 @app.route("/api/face/events")
