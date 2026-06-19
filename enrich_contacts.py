@@ -254,21 +254,28 @@ def enrich_person(p: dict, use_web: bool = True, token: str | None = None) -> di
     return p
 
 
+def save_person(event_api_id: str, p: dict):
+    """Persist the contact-enrichment fields of an already-enriched person dict."""
+    from scraper.db import save_contact
+    links = json.loads(p["discovered_links"]) if p.get("discovered_links") else {}
+    save_contact(event_api_id, p["person_api_id"], {
+        "github_handle": p.get("github_handle"),
+        "github_company": p.get("github_company"),
+        "current_role": p.get("current_role"),
+        "discovered_links": p.get("discovered_links"),
+        "website": links.get("website") or p.get("website"),
+        "contact_source": p.get("contact_source"),
+        "face_url": p.get("face_url"),
+        "face_source": p.get("face_source"),
+    })
+
+
 def enrich_event(event_api_id: str, use_web: bool = True) -> list[dict]:
-    from scraper.db import get_event_people, save_contact
+    from scraper.db import get_event_people
     people = get_event_people(event_api_id)
     for p in people:
         enrich_person(p, use_web=use_web)
-        save_contact(event_api_id, p["person_api_id"], {
-            "github_handle": p.get("github_handle"),
-            "github_company": p.get("github_company"),
-            "current_role": p.get("current_role"),
-            "discovered_links": p.get("discovered_links"),
-            "website": json.loads(p["discovered_links"]).get("website") if p.get("discovered_links") else p.get("website"),
-            "contact_source": p.get("contact_source"),
-            "face_url": p.get("face_url"),
-            "face_source": p.get("face_source"),
-        })
+        save_person(event_api_id, p)
     return people
 
 

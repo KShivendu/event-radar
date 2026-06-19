@@ -32,12 +32,16 @@ def load_profile() -> dict:
 
 
 def _person_card(p: dict) -> dict:
-    """A compact, token-light view of one person for the model."""
+    """A compact, token-light view of one person for the model.
+    Includes contact-enrichment fields (current_role, github) when present, so
+    ranking benefits from them if contacts ran first."""
     return {
         "id": p["person_api_id"],
         "name": p.get("name"),
         "role": p.get("role"),
         "bio": p.get("bio_short") or None,
+        "current_role": p.get("current_role"),
+        "github": p.get("github_handle"),
         "linkedin": p.get("linkedin_handle"),
         "twitter": p.get("twitter_handle"),
         "website": p.get("website"),
