@@ -17,6 +17,7 @@ _rank_status: dict[str, str] = {}
 # face recognition caches
 _face_app = None
 _face_indexes: dict = {}  # event_id -> (embeddings np.ndarray, meta list)
+_face_prep_status: dict[str, str] = {}  # event_id -> "running" | "done:N" | "error: ..."
 
 def _get_face_app():
     global _face_app
@@ -613,7 +614,40 @@ function renderPeople(people) {
   }).join('');
   const ranked = people.some(p => p.score != null);
   body.innerHTML = rows +
-    `<div class="text-center pt-4"><button onclick="findPeople()" class="ppl-btn px-4 py-2">↻ ${ranked ? 'Re-run' : 'Rank with Claude'}</button></div>`;
+    `<div class="text-center pt-4 flex gap-2 justify-center flex-wrap">
+      <button onclick="findPeople()" class="ppl-btn px-4 py-2">↻ ${ranked ? 'Re-run' : 'Rank with Claude'}</button>
+      <button id="face-index-btn" onclick="buildFaceIndex()" class="ppl-btn px-4 py-2">📷 Build face index</button>
+    </div>`;
+  checkFaceIndexStatus();
+}
+
+function checkFaceIndexStatus() {
+  if (!peopleEventId) return;
+  fetch('/api/face/prep-status?event=' + encodeURIComponent(peopleEventId))
+    .then(r => r.json())
+    .then(d => {
+      const btn = document.getElementById('face-index-btn');
+      if (!btn) return;
+      if (d.status === 'running') {
+        btn.textContent = '⏳ Indexing faces…';
+        btn.disabled = true;
+        setTimeout(checkFaceIndexStatus, 3000);
+      } else if (d.status && d.status.startsWith('done:')) {
+        btn.textContent = `✓ ${d.status.replace('done:', '')} faces indexed`;
+        btn.disabled = true;
+      } else if (d.status && d.status.startsWith('error:')) {
+        btn.textContent = '✗ Index failed';
+        btn.title = d.status;
+      }
+    });
+}
+
+function buildFaceIndex() {
+  const btn = document.getElementById('face-index-btn');
+  btn.textContent = '⏳ Indexing faces…';
+  btn.disabled = true;
+  fetch('/api/face/prep?event=' + encodeURIComponent(peopleEventId), {method: 'POST'})
+    .then(() => { setTimeout(checkFaceIndexStatus, 3000); });
 }
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePeople(); });
@@ -660,6 +694,38 @@ async function lumaSearch() {
 </script>
 </body>
 </html>"""
+
+
+@app.route("/api/face/prep", methods=["POST"])
+def api_face_prep():
+    """Trigger background face indexing for an event."""
+    event_id = request.args.get("event", "")
+    if not event_id:
+        return jsonify({"error": "missing event"}), 400
+    if _face_prep_status.get(event_id) == "running":
+        return jsonify({"status": "running"})
+    _face_prep_status[event_id] = "running"
+    # evict cached index so next search reloads the fresh npz
+    _face_indexes.pop(event_id, None)
+    def _prep():
+        try:
+            from face_prep import prep_event
+            result = prep_event(event_id)
+            _face_indexes.pop(event_id, None)  # force reload
+            _face_prep_status[event_id] = f"done:{result['embedded']}"
+        except Exception as e:
+            _face_prep_status[event_id] = f"error:{e}"
+    threading.Thread(target=_prep, daemon=True).start()
+    return jsonify({"status": "running"})
+
+
+@app.route("/api/face/prep-status")
+def api_face_prep_status():
+    event_id = request.args.get("event", "")
+    import pathlib
+    npz = pathlib.Path("faces") / f"{event_id}.npz"
+    status = _face_prep_status.get(event_id, "done" if npz.exists() else "idle")
+    return jsonify({"status": status})
 
 
 @app.route("/api/face/events")

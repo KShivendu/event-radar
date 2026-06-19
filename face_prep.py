@@ -72,20 +72,14 @@ def extract_embedding(app, img: Image.Image) -> np.ndarray | None:
     return emb / np.linalg.norm(emb)
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python3 face_prep.py <event_url_or_id>")
-        sys.exit(1)
-
-    event_id = resolve_event_id(sys.argv[1])
+def prep_event(event_id: str) -> dict:
+    """Embed all faces for an event and save to faces/<event_id>.npz.
+    Returns {"embedded": N, "skipped": N}. Raises on failure."""
     people = load_people(event_id)
     if not people:
-        print(f"No people in DB for {event_id} — run 'Find people' in the UI first.")
-        sys.exit(1)
+        raise RuntimeError(f"No people in DB for {event_id} — run 'Find people' first.")
 
-    print(f"Loading InsightFace model (downloads ~200MB on first run)…")
     app = get_face_app()
-
     embeddings, ids, meta = [], [], []
     skipped = 0
 
@@ -94,11 +88,9 @@ def main():
         face_url = p.get("face_url") or p.get("avatar_url") or ""
 
         if not face_url or LUMA_DEFAULT_AVATAR in face_url or name in SKIP_NAMES:
-            print(f"  skip {name} (no usable face)")
             skipped += 1
             continue
 
-        print(f"  {name} …", end=" ", flush=True)
         img = download_image(face_url)
         if img is None:
             skipped += 1
@@ -106,7 +98,6 @@ def main():
 
         emb = extract_embedding(app, img)
         if emb is None:
-            print("no face detected")
             skipped += 1
             continue
 
@@ -123,19 +114,28 @@ def main():
             "twitter": p.get("twitter_handle") or "",
             "website": p.get("website") or "",
         })
-        print("ok")
         time.sleep(0.1)
 
     if not embeddings:
-        print("No faces embedded — nothing to save.")
-        sys.exit(1)
+        raise RuntimeError("No faces could be embedded (all skipped or no face detected).")
 
     out = FACES_DIR / f"{event_id}.npz"
     np.savez(out,
              embeddings=np.array(embeddings),
              ids=np.array(ids),
              meta=np.array([json.dumps(m) for m in meta]))
-    print(f"\nSaved {len(embeddings)} embeddings → {out}  ({skipped} skipped)")
+    return {"embedded": len(embeddings), "skipped": skipped}
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python3 face_prep.py <event_url_or_id>")
+        sys.exit(1)
+
+    event_id = resolve_event_id(sys.argv[1])
+    print(f"Loading InsightFace model (downloads ~200MB on first run)…")
+    result = prep_event(event_id)
+    print(f"Saved {result['embedded']} embeddings → faces/{event_id}.npz  ({result['skipped']} skipped)")
 
 
 if __name__ == "__main__":
