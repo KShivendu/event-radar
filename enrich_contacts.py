@@ -13,6 +13,7 @@ Backends mirror enrich.py: the Anthropic SDK when an API key is set, otherwise t
 local `claude` CLI (already authenticated). The unique anchors we trust for identity
 are the Twitter handle and website — everything is matched back to those.
 """
+import hashlib
 import json
 import os
 import re
@@ -169,6 +170,42 @@ def _extract_json(text: str) -> str:
     return text[start:end + 1]
 
 
+# ---------- face / avatar ----------
+
+def _url_is_image(url: str, timeout: int = 12) -> bool:
+    """True if the URL returns 200 with an image content-type (no full download)."""
+    try:
+        r = requests.get(url, timeout=timeout, stream=True, allow_redirects=True)
+        ok = r.status_code == 200 and r.headers.get("content-type", "").startswith("image")
+        r.close()
+        return ok
+    except Exception:
+        return False
+
+
+def gravatar_url(email: str) -> str:
+    h = hashlib.sha256(email.strip().lower().encode()).hexdigest()
+    return f"https://gravatar.com/avatar/{h}?s=400&d=404"
+
+
+def resolve_face(p: dict) -> tuple[str | None, str | None]:
+    """Best-first face cascade (returns the resolved URL, not a download):
+    Luma avatar → GitHub avatar → Gravatar (needs email). Falls back to the Luma
+    default placeholder, then None. Each candidate is verified to actually serve an image."""
+    av = p.get("avatar_url") or ""
+    if av and "avatars-default" not in av:
+        return av, "luma"
+    if p.get("github_handle"):
+        gh = f"https://github.com/{p['github_handle']}.png?size=400"
+        if _url_is_image(gh):
+            return gh, "github"
+    if p.get("email"):  # dormant until we collect emails, but wired per design
+        gu = gravatar_url(p["email"])
+        if _url_is_image(gu):
+            return gu, "gravatar"
+    return (av or None), ("luma_default" if av else None)
+
+
 # ---------- orchestration ----------
 
 def enrich_person(p: dict, use_web: bool = True, token: str | None = None) -> dict:
@@ -211,6 +248,9 @@ def enrich_person(p: dict, use_web: bool = True, token: str | None = None) -> di
         links["github"] = f"https://github.com/{github}"
     p["discovered_links"] = json.dumps(links)
     p["contact_source"] = "+".join(source)
+
+    # face cascade (runs after github is known)
+    p["face_url"], p["face_source"] = resolve_face(p)
     return p
 
 
@@ -226,6 +266,8 @@ def enrich_event(event_api_id: str, use_web: bool = True) -> list[dict]:
             "discovered_links": p.get("discovered_links"),
             "website": json.loads(p["discovered_links"]).get("website") if p.get("discovered_links") else p.get("website"),
             "contact_source": p.get("contact_source"),
+            "face_url": p.get("face_url"),
+            "face_source": p.get("face_source"),
         })
     return people
 
@@ -253,6 +295,8 @@ if __name__ == "__main__":
         print(f"{p['name']}  ({p['contact_source']})")
         if p.get("current_role"):
             print(f"    role: {p['current_role']}")
+        if p.get("face_url"):
+            print(f"    face: {p['face_url']}  [{p['face_source']}]")
         for k in ("github", "website", "linkedin", "twitter"):
             if links.get(k):
                 print(f"    {k}: {links[k]}")
