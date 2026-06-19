@@ -14,6 +14,32 @@ PT = zoneinfo.ZoneInfo("America/Los_Angeles")
 # tracks which events have an active ranking job: event_api_id -> "running" | "done" | "error: ..."
 _rank_status: dict[str, str] = {}
 
+# face recognition caches
+_face_app = None
+_face_indexes: dict = {}  # event_id -> (embeddings np.ndarray, meta list)
+
+def _get_face_app():
+    global _face_app
+    if _face_app is None:
+        from insightface.app import FaceAnalysis
+        import numpy as np
+        _face_app = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
+        _face_app.prepare(ctx_id=0, det_size=(640, 640))
+    return _face_app
+
+def _get_face_index(event_id: str):
+    if event_id not in _face_indexes:
+        import numpy as np, pathlib
+        path = pathlib.Path("faces") / f"{event_id}.npz"
+        if not path.exists():
+            return None, None
+        data = np.load(path, allow_pickle=True)
+        _face_indexes[event_id] = (
+            data["embeddings"],
+            [json.loads(m) for m in data["meta"]],
+        )
+    return _face_indexes[event_id]
+
 
 def to_pt(dt_str: str | None) -> str:
     if not dt_str:
@@ -633,6 +659,235 @@ async function lumaSearch() {
 </script>
 </body>
 </html>"""
+
+
+@app.route("/api/face/events")
+def api_face_events():
+    """Return list of events that have a pre-built face index (.npz)."""
+    import pathlib
+    faces_dir = pathlib.Path("faces")
+    if not faces_dir.exists():
+        return jsonify([])
+    events = []
+    with get_conn() as conn:
+        for npz in sorted(faces_dir.glob("*.npz")):
+            eid = npz.stem
+            row = conn.execute(
+                "SELECT name FROM events WHERE external_id = ? LIMIT 1", (eid,)
+            ).fetchone()
+            count = 0
+            try:
+                import numpy as np
+                data = np.load(npz, allow_pickle=True)
+                count = len(data["embeddings"])
+            except Exception:
+                pass
+            events.append({"id": eid, "name": row[0] if row else eid, "count": count})
+    return jsonify(events)
+
+
+@app.route("/api/face/search", methods=["POST"])
+def api_face_search():
+    """Accept a JPEG image, find the closest face in the event index."""
+    import numpy as np, cv2
+    event_id = request.args.get("event", "")
+    threshold = float(request.args.get("threshold", "0.35"))
+    if not event_id:
+        return jsonify({"error": "missing event param"}), 400
+
+    embeddings, meta = _get_face_index(event_id)
+    if embeddings is None:
+        return jsonify({"error": f"No face index for {event_id} — run face_prep.py first"}), 404
+
+    img_bytes = request.get_data()
+    if not img_bytes:
+        return jsonify({"error": "no image data"}), 400
+
+    arr = np.frombuffer(img_bytes, dtype=np.uint8)
+    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if frame is None:
+        return jsonify({"error": "could not decode image"}), 400
+
+    try:
+        app_face = _get_face_app()
+    except Exception as e:
+        return jsonify({"error": f"InsightFace load failed: {e}"}), 500
+
+    faces = app_face.get(frame)
+    if not faces:
+        return jsonify({"match": None, "sim": 0, "reason": "no face detected"})
+
+    face = max(faces, key=lambda f: (f.bbox[2]-f.bbox[0])*(f.bbox[3]-f.bbox[1]))
+    emb = face.normed_embedding
+    emb = emb / np.linalg.norm(emb)
+
+    sims = embeddings @ emb
+    best_idx = int(np.argmax(sims))
+    best_sim = float(sims[best_idx])
+
+    if best_sim < threshold:
+        return jsonify({"match": None, "sim": round(best_sim, 3), "reason": "no match above threshold"})
+
+    return jsonify({"match": meta[best_idx], "sim": round(best_sim, 3)})
+
+
+FACE_HTML = r"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Face Search — Event Radar</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d0d14; color: #e2e2f0; font-family: system-ui, sans-serif; min-height: 100dvh; display: flex; flex-direction: column; }
+  header { padding: 12px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #1e1e2e; }
+  header a { color: #6366f1; text-decoration: none; font-size: 13px; }
+  select { background: #1a1a2e; color: #e2e2f0; border: 1px solid #2a2a40; border-radius: 8px; padding: 6px 10px; font-size: 14px; flex: 1; }
+  #cam-wrap { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #000; }
+  #video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  #canvas { display: none; }
+  #snap-btn { position: absolute; bottom: 28px; left: 50%; transform: translateX(-50%);
+    width: 68px; height: 68px; border-radius: 50%; border: 4px solid #fff;
+    background: rgba(255,255,255,0.15); backdrop-filter: blur(6px);
+    cursor: pointer; transition: background .15s; }
+  #snap-btn:active { background: rgba(255,255,255,0.35); }
+  #snap-btn::after { content: ''; display: block; width: 52px; height: 52px; border-radius: 50%; background: #fff; margin: 4px auto; }
+  #result { padding: 16px; display: none; border-top: 1px solid #1e1e2e; }
+  .card { background: #13131f; border: 1px solid #2a2a40; border-radius: 12px; padding: 14px; }
+  .name { font-size: 18px; font-weight: 600; }
+  .sim { font-size: 12px; color: #6b7280; margin-left: 6px; }
+  .role { font-size: 11px; color: #6366f1; text-transform: uppercase; letter-spacing: .05em; margin-top: 2px; }
+  .bio { font-size: 13px; color: #a0a0b8; margin-top: 6px; }
+  .score { display: inline-block; margin-top: 8px; padding: 2px 8px; border-radius: 99px; font-size: 12px; font-weight: 600; }
+  .s-hi { background: #14532d; color: #4ade80; }
+  .s-mid { background: #422006; color: #fbbf24; }
+  .s-lo { background: #450a0a; color: #f87171; }
+  .links { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .links a { font-size: 12px; color: #818cf8; text-decoration: none; background: #1e1e38; padding: 3px 8px; border-radius: 6px; }
+  .ice { margin-top: 10px; font-size: 13px; color: #a3e635; font-style: italic; border-left: 2px solid #4d7c0f; padding-left: 8px; }
+  .unknown { color: #6b7280; font-size: 15px; text-align: center; padding: 20px; }
+  #status { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,.7); color: #e2e2f0; font-size: 13px; padding: 4px 12px;
+    border-radius: 99px; white-space: nowrap; pointer-events: none; }
+</style>
+</head>
+<body>
+<header>
+  <a href="/">← Events</a>
+  <select id="event-sel" onchange="loadEvent()"><option value="">— pick an event —</option></select>
+</header>
+<div id="cam-wrap">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
+  <div id="status">Starting camera…</div>
+  <button id="snap-btn" onclick="snap()" disabled></button>
+</div>
+<div id="result"></div>
+
+<script>
+let currentEvent = null;
+
+async function init() {
+  const r = await fetch('/api/face/events');
+  const events = await r.json();
+  const sel = document.getElementById('event-sel');
+  events.forEach(e => {
+    const opt = document.createElement('option');
+    opt.value = e.id;
+    opt.textContent = `${e.name} (${e.count} faces)`;
+    sel.appendChild(opt);
+  });
+  if (events.length === 1) { sel.value = events[0].id; loadEvent(); }
+  startCamera();
+}
+
+function loadEvent() {
+  currentEvent = document.getElementById('event-sel').value || null;
+  document.getElementById('result').style.display = 'none';
+}
+
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    const video = document.getElementById('video');
+    video.srcObject = stream;
+    await video.play();
+    document.getElementById('status').textContent = 'Tap ◉ to identify';
+    document.getElementById('snap-btn').disabled = false;
+  } catch(e) {
+    document.getElementById('status').textContent = 'Camera error: ' + e.message;
+  }
+}
+
+async function snap() {
+  if (!currentEvent) { alert('Pick an event first'); return; }
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  // un-mirror before sending
+  ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
+  ctx.drawImage(video, 0, 0);
+
+  document.getElementById('status').textContent = 'Identifying…';
+  document.getElementById('snap-btn').disabled = true;
+
+  canvas.toBlob(async blob => {
+    try {
+      const buf = await blob.arrayBuffer();
+      const r = await fetch(`/api/face/search?event=${encodeURIComponent(currentEvent)}`, {
+        method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: buf
+      });
+      const d = await r.json();
+      renderResult(d);
+    } catch(e) {
+      document.getElementById('result').innerHTML = `<p class="unknown">Error: ${e}</p>`;
+      document.getElementById('result').style.display = 'block';
+    } finally {
+      document.getElementById('status').textContent = 'Tap ◉ to identify';
+      document.getElementById('snap-btn').disabled = false;
+    }
+  }, 'image/jpeg', 0.9);
+}
+
+function renderResult(d) {
+  const el = document.getElementById('result');
+  el.style.display = 'block';
+  if (!d.match) {
+    el.innerHTML = `<p class="unknown">No match (${d.reason || 'unknown'})</p>`;
+    return;
+  }
+  const m = d.match;
+  const score = m.score != null ? `<span class="score ${m.score>=7?'s-hi':m.score>=5?'s-mid':'s-lo'}">${m.score}/10</span>` : '';
+  const links = [
+    m.linkedin ? `<a href="https://linkedin.com${m.linkedin.startsWith('/')?'':'/in/'}${m.linkedin}" target="_blank">LinkedIn</a>` : '',
+    m.twitter  ? `<a href="https://x.com/${m.twitter.replace('@','')}" target="_blank">Twitter</a>` : '',
+    m.website  ? `<a href="${m.website}" target="_blank">Website</a>` : '',
+    m.github   ? `<a href="https://github.com/${m.github}" target="_blank">GitHub</a>` : '',
+  ].filter(Boolean).join('');
+  const ice = m.icebreaker ? `<div class="ice">${m.icebreaker}</div>` : '';
+  el.innerHTML = `<div class="card">
+    <div><span class="name">${m.name}</span><span class="sim">${d.sim.toFixed(2)}</span></div>
+    <div class="role">${m.role||''}</div>
+    <div class="bio">${m.bio||''}</div>
+    ${score}
+    ${links ? `<div class="links">${links}</div>` : ''}
+    ${ice}
+  </div>`;
+}
+
+init();
+</script>
+</body>
+</html>"""
+
+
+@app.route("/face")
+def face_page():
+    return FACE_HTML
 
 
 @app.route("/")
