@@ -209,10 +209,17 @@ def api_people_find():
     if not event:
         return jsonify({"error": "missing event"}), 400
     try:
-        from scraper.sources.luma_people import collect
-        summary = collect(event)
+        from scraper.sources.luma_people import collect, collect_attendees
+        import os
+        cookie = os.environ.get("LUMA_COOKIE", "")
+        # try full attendee list first (needs ticket_key in DB); fall back to hosts+featured guests
+        try:
+            summary = collect_attendees(event, cookie)
+            people = summary["attendees"]
+        except Exception:
+            summary = collect(event)
+            people = summary["people"]
         eid = summary["event_api_id"]
-        people = summary["people"]
     except Exception as e:
         return jsonify({"error": str(e)}), 502
 
@@ -223,10 +230,11 @@ def api_people_find():
             try:
                 import enrich, enrich_contacts
                 from scraper.db import save_ranking
-                for p in people:
+                all_people = get_event_people(eid)
+                for p in all_people:
                     enrich_contacts.enrich_person(p, use_web=False)
                     enrich_contacts.save_person(eid, p)
-                ranked = enrich.enrich_people(summary, people, use_web=False)
+                ranked = enrich.enrich_people(summary, all_people, use_web=False)
                 for p in ranked:
                     if p.get("rank_score") is not None:
                         save_ranking(eid, p["person_api_id"], p["rank_score"],
