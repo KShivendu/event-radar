@@ -537,6 +537,10 @@ function pollRankStatus() {
     });
 }
 
+function profileScore(p) {
+  return [p.linkedin, p.twitter, p.website, p.github, p.bio].filter(Boolean).length;
+}
+
 function renderPeople(people) {
   const body = document.getElementById('people-body');
   if (!people || !people.length) {
@@ -544,6 +548,11 @@ function renderPeople(people) {
       <p class="text-gray-500 text-sm mb-4">No people collected yet for this event.</p>
       <button onclick="findPeople()" class="ppl-btn px-4 py-2">✨ Find people</button></div>`;
     return;
+  }
+  const anyRanked = people.some(p => p.score != null);
+  if (!anyRanked) {
+    // pre-rank by profile completeness while Claude works
+    people = [...people].sort((a, b) => profileScore(b) - profileScore(a));
   }
   const linkIcon = (url, label) => url ? `<a href="${esc(url)}" target="_blank" class="text-indigo-400 hover:text-indigo-300 text-xs mr-2">${label}</a>` : '';
   const rows = people.map(p => {
