@@ -737,56 +737,111 @@ FACE_HTML = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Face Search — Event Radar</title>
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Face Search</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #0d0d14; color: #e2e2f0; font-family: system-ui, sans-serif; min-height: 100dvh; display: flex; flex-direction: column; }
-  header { padding: 12px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #1e1e2e; }
-  header a { color: #6366f1; text-decoration: none; font-size: 13px; }
-  select { background: #1a1a2e; color: #e2e2f0; border: 1px solid #2a2a40; border-radius: 8px; padding: 6px 10px; font-size: 14px; flex: 1; }
-  #cam-wrap { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #000; }
-  #video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  body { background: #000; color: #e2e2f0; font-family: system-ui, sans-serif;
+         height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
+
+  /* full-screen camera */
+  #cam-wrap { position: relative; flex: 1; overflow: hidden; }
+  #video { width: 100%; height: 100%; object-fit: cover; }
   #canvas { display: none; }
-  #snap-btn { position: absolute; bottom: 28px; left: 50%; transform: translateX(-50%);
-    width: 68px; height: 68px; border-radius: 50%; border: 4px solid #fff;
-    background: rgba(255,255,255,0.15); backdrop-filter: blur(6px);
-    cursor: pointer; transition: background .15s; }
-  #snap-btn:active { background: rgba(255,255,255,0.35); }
-  #snap-btn::after { content: ''; display: block; width: 52px; height: 52px; border-radius: 50%; background: #fff; margin: 4px auto; }
-  #result { padding: 16px; display: none; border-top: 1px solid #1e1e2e; }
-  .card { background: #13131f; border: 1px solid #2a2a40; border-radius: 12px; padding: 14px; }
-  .name { font-size: 18px; font-weight: 600; }
-  .sim { font-size: 12px; color: #6b7280; margin-left: 6px; }
-  .role { font-size: 11px; color: #6366f1; text-transform: uppercase; letter-spacing: .05em; margin-top: 2px; }
-  .bio { font-size: 13px; color: #a0a0b8; margin-top: 6px; }
-  .score { display: inline-block; margin-top: 8px; padding: 2px 8px; border-radius: 99px; font-size: 12px; font-weight: 600; }
-  .s-hi { background: #14532d; color: #4ade80; }
+
+  /* top overlay bar */
+  #topbar { position: absolute; top: 0; left: 0; right: 0;
+            display: flex; align-items: center; gap: 8px; padding: 12px 14px;
+            padding-top: max(12px, env(safe-area-inset-top));
+            background: linear-gradient(to bottom, rgba(0,0,0,.6), transparent); }
+  #topbar a { color: #fff; text-decoration: none; font-size: 14px; white-space: nowrap; }
+  #event-sel { flex: 1; background: rgba(0,0,0,.5); color: #fff; border: 1px solid rgba(255,255,255,.25);
+               border-radius: 8px; padding: 6px 10px; font-size: 13px; backdrop-filter: blur(6px); }
+
+  /* status pill */
+  #status { position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,.65); color: #e2e2f0; font-size: 13px;
+            padding: 4px 14px; border-radius: 99px; white-space: nowrap;
+            pointer-events: none; backdrop-filter: blur(4px); }
+
+  /* bottom controls */
+  #controls { position: absolute; bottom: 0; left: 0; right: 0;
+              display: flex; align-items: center; justify-content: center; gap: 32px;
+              padding: 20px 32px; padding-bottom: max(20px, env(safe-area-inset-bottom));
+              background: linear-gradient(to top, rgba(0,0,0,.55), transparent); }
+
+  #snap-btn { width: 72px; height: 72px; border-radius: 50%; border: 4px solid #fff;
+              background: rgba(255,255,255,.18); backdrop-filter: blur(6px);
+              cursor: pointer; transition: background .12s; flex-shrink: 0; }
+  #snap-btn:active { background: rgba(255,255,255,.4); }
+  #snap-btn::after { content: ''; display: block; width: 56px; height: 56px;
+                     border-radius: 50%; background: #fff; margin: 4px auto; }
+  #snap-btn:disabled { opacity: .4; }
+
+  #flip-btn { width: 44px; height: 44px; border-radius: 50%; border: 2px solid rgba(255,255,255,.5);
+              background: rgba(255,255,255,.12); backdrop-filter: blur(6px);
+              cursor: pointer; font-size: 20px; display: flex; align-items: center;
+              justify-content: center; transition: background .12s; }
+  #flip-btn:active { background: rgba(255,255,255,.3); }
+
+  /* result bottom sheet */
+  #sheet { position: absolute; bottom: 0; left: 0; right: 0;
+           background: #0f0f1a; border-radius: 20px 20px 0 0;
+           border-top: 1px solid #2a2a40;
+           transform: translateY(100%); transition: transform .3s ease;
+           max-height: 70dvh; overflow-y: auto;
+           padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+  #sheet.open { transform: translateY(0); }
+  #sheet-handle { width: 36px; height: 4px; background: #3a3a55; border-radius: 2px;
+                  margin: 10px auto 14px; }
+  #sheet-body { padding: 0 16px 8px; }
+
+  .name { font-size: 19px; font-weight: 700; }
+  .sim  { font-size: 12px; color: #6b7280; margin-left: 6px; }
+  .role { font-size: 11px; color: #6366f1; text-transform: uppercase; letter-spacing: .05em; margin-top: 3px; }
+  .bio  { font-size: 14px; color: #a0a0b8; margin-top: 8px; line-height: 1.45; }
+  .score { display: inline-block; margin-top: 10px; padding: 3px 10px; border-radius: 99px; font-size: 13px; font-weight: 600; }
+  .s-hi  { background: #14532d; color: #4ade80; }
   .s-mid { background: #422006; color: #fbbf24; }
-  .s-lo { background: #450a0a; color: #f87171; }
-  .links { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
-  .links a { font-size: 12px; color: #818cf8; text-decoration: none; background: #1e1e38; padding: 3px 8px; border-radius: 6px; }
-  .ice { margin-top: 10px; font-size: 13px; color: #a3e635; font-style: italic; border-left: 2px solid #4d7c0f; padding-left: 8px; }
-  .unknown { color: #6b7280; font-size: 15px; text-align: center; padding: 20px; }
-  #status { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
-    background: rgba(0,0,0,.7); color: #e2e2f0; font-size: 13px; padding: 4px 12px;
-    border-radius: 99px; white-space: nowrap; pointer-events: none; }
+  .s-lo  { background: #450a0a; color: #f87171; }
+  .links { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .links a { font-size: 13px; color: #818cf8; text-decoration: none;
+             background: #1e1e38; padding: 5px 12px; border-radius: 8px; }
+  .ice { margin-top: 12px; font-size: 13px; color: #a3e635; font-style: italic;
+         border-left: 2px solid #4d7c0f; padding-left: 10px; line-height: 1.5; }
+  .unknown { color: #6b7280; font-size: 15px; text-align: center; padding: 24px; }
 </style>
 </head>
 <body>
-<header>
-  <a href="/">← Events</a>
-  <select id="event-sel" onchange="loadEvent()"><option value="">— pick an event —</option></select>
-</header>
 <div id="cam-wrap">
   <video id="video" autoplay playsinline muted></video>
   <canvas id="canvas"></canvas>
+
+  <div id="topbar">
+    <a href="/">←</a>
+    <select id="event-sel" onchange="loadEvent()"><option value="">— pick event —</option></select>
+  </div>
+
   <div id="status">Starting camera…</div>
-  <button id="snap-btn" onclick="snap()" disabled></button>
+
+  <div id="controls">
+    <div style="width:44px"></div><!-- spacer -->
+    <button id="snap-btn" onclick="snap()" disabled></button>
+    <button id="flip-btn" onclick="flipCamera()" title="Flip camera">🔄</button>
+  </div>
+
+  <div id="sheet" onclick="event.stopPropagation()">
+    <div id="sheet-handle" onclick="closeSheet()"></div>
+    <div id="sheet-body"></div>
+  </div>
 </div>
-<div id="result"></div>
 
 <script>
 let currentEvent = null;
+let facingMode = 'environment';
+let stream = null;
+let mirrored = false;
 
 async function init() {
   const r = await fetch('/api/face/events');
@@ -795,7 +850,7 @@ async function init() {
   events.forEach(e => {
     const opt = document.createElement('option');
     opt.value = e.id;
-    opt.textContent = `${e.name} (${e.count} faces)`;
+    opt.textContent = `${e.name} (${e.count})`;
     sel.appendChild(opt);
   });
   if (events.length === 1) { sel.value = events[0].id; loadEvent(); }
@@ -804,23 +859,43 @@ async function init() {
 
 function loadEvent() {
   currentEvent = document.getElementById('event-sel').value || null;
-  document.getElementById('result').style.display = 'none';
+  closeSheet();
 }
 
-async function startCamera() {
+async function startCamera(facing) {
+  facing = facing || facingMode;
+  if (stream) { stream.getTracks().forEach(t => t.stop()); }
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } }
     });
     const video = document.getElementById('video');
     video.srcObject = stream;
     await video.play();
+    // mirror front cam, don't mirror rear
+    mirrored = facing === 'user';
+    video.style.transform = mirrored ? 'scaleX(-1)' : '';
     document.getElementById('status').textContent = 'Tap ◉ to identify';
     document.getElementById('snap-btn').disabled = false;
   } catch(e) {
     document.getElementById('status').textContent = 'Camera error: ' + e.message;
   }
 }
+
+async function flipCamera() {
+  facingMode = facingMode === 'environment' ? 'user' : 'environment';
+  await startCamera(facingMode);
+}
+
+function closeSheet() {
+  document.getElementById('sheet').classList.remove('open');
+}
+
+// tap outside sheet to close
+document.getElementById('cam-wrap').addEventListener('click', e => {
+  if (!e.target.closest('#sheet') && !e.target.closest('#snap-btn') && !e.target.closest('#flip-btn'))
+    closeSheet();
+});
 
 async function snap() {
   if (!currentEvent) { alert('Pick an event first'); return; }
@@ -829,8 +904,7 @@ async function snap() {
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   const ctx = canvas.getContext('2d');
-  // un-mirror before sending
-  ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
+  if (mirrored) { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); }
   ctx.drawImage(video, 0, 0);
 
   document.getElementById('status').textContent = 'Identifying…';
@@ -845,8 +919,8 @@ async function snap() {
       const d = await r.json();
       renderResult(d);
     } catch(e) {
-      document.getElementById('result').innerHTML = `<p class="unknown">Error: ${e}</p>`;
-      document.getElementById('result').style.display = 'block';
+      document.getElementById('sheet-body').innerHTML = `<p class="unknown">Error: ${e}</p>`;
+      document.getElementById('sheet').classList.add('open');
     } finally {
       document.getElementById('status').textContent = 'Tap ◉ to identify';
       document.getElementById('snap-btn').disabled = false;
@@ -855,10 +929,11 @@ async function snap() {
 }
 
 function renderResult(d) {
-  const el = document.getElementById('result');
-  el.style.display = 'block';
+  const body = document.getElementById('sheet-body');
+  const sheet = document.getElementById('sheet');
   if (!d.match) {
-    el.innerHTML = `<p class="unknown">No match (${d.reason || 'unknown'})</p>`;
+    body.innerHTML = `<p class="unknown">No match — ${d.reason || 'try again'}</p>`;
+    sheet.classList.add('open');
     return;
   }
   const m = d.match;
@@ -870,14 +945,14 @@ function renderResult(d) {
     m.github   ? `<a href="https://github.com/${m.github}" target="_blank">GitHub</a>` : '',
   ].filter(Boolean).join('');
   const ice = m.icebreaker ? `<div class="ice">${m.icebreaker}</div>` : '';
-  el.innerHTML = `<div class="card">
+  body.innerHTML = `
     <div><span class="name">${m.name}</span><span class="sim">${d.sim.toFixed(2)}</span></div>
     <div class="role">${m.role||''}</div>
     <div class="bio">${m.bio||''}</div>
     ${score}
     ${links ? `<div class="links">${links}</div>` : ''}
-    ${ice}
-  </div>`;
+    ${ice}`;
+  sheet.classList.add('open');
 }
 
 init();
