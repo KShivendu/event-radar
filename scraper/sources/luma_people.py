@@ -1,20 +1,19 @@
-"""Collect the people at a given Luma event — hosts and publicly-visible guests.
+"""Collect the people at a given Luma event.
 
-Luma's public `event/get` endpoint (no cookie required) returns:
-  - `hosts`          — every host, with full profile + social handles
-  - `featured_guests`— up to ~10 sampled attendees (the "Going" avatars on the page),
-                       each with the same rich profile (LinkedIn / Twitter / bio / website)
-  - `guest_count`    — total registered (not the full roster — that needs host auth)
+Two collection modes:
 
-So for any public event we can assemble a "people to talk to" list — hosts plus the
-featured guests — already enriched with social handles, without authentication.
+1. Public (no cookie) — `event/get` returns hosts + ~10 featured guests.
+2. Full guest list (cookie + ticket_key) — `event/get-guest-list` paginates
+   through all attendees. Only works for events you're registered for.
 """
 import re
+import time
 from collections import Counter
 
 import requests
 
 EVENT_GET_URL = "https://api.luma.com/event/get"
+GUEST_LIST_URL = "https://api.luma.com/event/get-guest-list"
 
 _API_HEADERS = {
     "accept": "*/*",
@@ -123,4 +122,87 @@ def collect(url_or_id: str) -> dict:
         "event_url": event_url,
         "guest_count": data.get("guest_count"),
         "people": people,
+    }
+
+
+def fetch_guest_list(event_api_id: str, ticket_key: str, cookie: str,
+                     page_size: int = 100, sleep_s: float = 1.5) -> list[dict]:
+    """Paginate through the full attendee list for an event you're registered for.
+    Requires a valid LUMA_COOKIE and the ticket_key from your registration."""
+    import json
+    headers = {
+        **_API_HEADERS,
+        "cookie": cookie,
+        "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+        "origin": "https://luma.com",
+        "referer": "https://luma.com/",
+        "x-luma-timezone": "America/Los_Angeles",
+    }
+    attendees = []
+    cursor = None
+    page = 0
+    while True:
+        params = {"event_api_id": event_api_id, "pagination_limit": page_size, "ticket_key": ticket_key}
+        if cursor:
+            params["pagination_cursor"] = cursor
+        resp = requests.get(GUEST_LIST_URL, params=params, headers=headers, timeout=20)
+        resp.raise_for_status()
+        data = resp.json()
+        entries = data.get("entries", [])
+        for entry in entries:
+            user = entry.get("user", {})
+            if user.get("api_id"):
+                attendees.append(_person(user, "attendee"))
+        page += 1
+        print(f"  [guest-list] page {page}: {len(entries)} entries (total so far: {len(attendees)})")
+        if not data.get("has_more"):
+            break
+        cursor = data.get("next_cursor")
+        time.sleep(sleep_s)
+    return attendees
+
+
+def collect_attendees(url_or_id: str, cookie: str, ticket_key: str | None = None) -> dict:
+    """Fetch the full attendee list for an event you're registered for.
+    If ticket_key is not provided, it is looked up from the events DB."""
+    import json
+    from scraper.db import init_db, upsert_person, get_conn
+
+    init_db()
+    event_api_id = resolve_event_id(url_or_id)
+
+    if ticket_key is None:
+        conn = get_conn()
+        row = conn.execute(
+            "SELECT raw_json FROM events WHERE external_id = ? AND source LIKE 'luma:%'",
+            (event_api_id,)
+        ).fetchone()
+        if not row:
+            raise ValueError(f"Event {event_api_id} not in DB — run scraper first or pass ticket_key explicitly.")
+        raw = json.loads(row[0])
+        ticket_key = (raw.get("guest_info") or {}).get("ticket_key")
+        if not ticket_key:
+            raise ValueError(f"No ticket_key found for {event_api_id} — are you registered for this event?")
+
+    data = fetch_event(event_api_id)
+    event = data.get("event", {})
+    event_name = event.get("name", "")
+    event_url = f"https://lu.ma/{event.get('url') or event_api_id}"
+
+    attendees = fetch_guest_list(event_api_id, ticket_key, cookie)
+    for p in attendees:
+        upsert_person({
+            "event_api_id": event_api_id,
+            "event_url": event_url,
+            "event_name": event_name,
+            "raw_json": json.dumps(p.pop("raw")),
+            **p,
+        })
+
+    return {
+        "event_api_id": event_api_id,
+        "event_name": event_name,
+        "event_url": event_url,
+        "attendee_count": len(attendees),
+        "attendees": attendees,
     }
