@@ -396,7 +396,7 @@ HTML = r"""<!DOCTYPE html>
 
 <script>
 let allEvents = [];
-let selectedDate = '';
+let selectedDate = new Date().toLocaleDateString('en-CA', {timeZone: 'America/Los_Angeles'});
 
 async function loadDates() {
   const res = await fetch('/api/dates');
