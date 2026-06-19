@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 import zoneinfo
 from flask import Flask, request, jsonify, render_template_string
-from scraper.db import get_conn
+from scraper.db import get_conn, get_event_people
 
 app = Flask(__name__)
 PT = zoneinfo.ZoneInfo("America/Los_Angeles")
@@ -167,6 +167,50 @@ def api_luma_search():
     return jsonify(results)
 
 
+def _person_public(p: dict) -> dict:
+    from enrich_contacts import canonical_links
+    links = json.loads(p["discovered_links"]) if p.get("discovered_links") else canonical_links(p)
+    face = p.get("face_url") or p.get("avatar_url")
+    if face and "avatars-default" in face:
+        face = None
+    return {
+        "name": p.get("name"),
+        "role": p.get("role"),
+        "face_url": face,
+        "score": p.get("rank_score"),
+        "reason": p.get("rank_reason"),
+        "icebreaker": p.get("icebreaker"),
+        "current_role": p.get("current_role") or p.get("bio_short") or "",
+        "github": links.get("github"),
+        "linkedin": links.get("linkedin"),
+        "twitter": links.get("twitter"),
+        "website": links.get("website"),
+    }
+
+
+@app.route("/api/people")
+def api_people():
+    """People already collected for an event (by evt- id)."""
+    eid = request.args.get("event", "")
+    rows = get_event_people(eid)
+    return jsonify([_person_public(p) for p in rows])
+
+
+@app.route("/api/people/find", methods=["POST"])
+def api_people_find():
+    """Run the full pipeline for an event: collect → enrich contacts + faces → rank.
+    Web search is left off here to keep the request responsive."""
+    event = request.args.get("event", "")
+    if not event:
+        return jsonify({"error": "missing event"}), 400
+    try:
+        from pipeline import find_people
+        _, people = find_people(event, contacts=True, contacts_web=False, rank=True, rank_web=False)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+    return jsonify([_person_public(p) for p in people])
+
+
 @app.route("/api/dates")
 def api_dates():
     with get_conn() as conn:
@@ -204,6 +248,13 @@ HTML = r"""<!DOCTYPE html>
   ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #0f0f13; }
   ::-webkit-scrollbar-thumb { background: #2a2a38; border-radius: 3px; }
   .group-header { border-left: 3px solid #5b5bff; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 50; }
+  .modal-panel { background: #14141c; border: 1px solid #2a2a38; }
+  .ppl-btn { font-size: 0.7rem; color: #9090b0; border: 1px solid #2a2a38; border-radius: 6px; padding: 2px 8px; }
+  .ppl-btn:hover { border-color: #5b5bff; color: #a0a0ff; }
+  .score { font-size: 0.7rem; font-weight: 700; border-radius: 6px; padding: 2px 7px; }
+  .s-hi { background: #0f2a1a; color: #4ade80; } .s-mid { background: #2a2410; color: #fbbf24; } .s-lo { background: #1a1a2a; color: #8888a8; }
+  .ice { background: #16161f; border-left: 2px solid #5b5bff; }
 </style>
 </head>
 <body class="min-h-screen">
@@ -258,6 +309,18 @@ HTML = r"""<!DOCTYPE html>
   <!-- Luma Live Search results -->
   <div id="luma-search-results" class="hidden"></div>
 
+</div>
+
+<!-- People modal -->
+<div id="people-modal" class="modal-overlay hidden flex items-start justify-center p-4 overflow-y-auto" onclick="if(event.target===this) closePeople()">
+  <div class="modal-panel rounded-2xl w-full max-w-2xl my-8 p-5">
+    <div class="flex items-center justify-between mb-1">
+      <h2 class="text-lg font-semibold text-white">People to talk to</h2>
+      <button onclick="closePeople()" class="text-gray-500 hover:text-gray-300 text-xl leading-none">✕</button>
+    </div>
+    <p id="people-subtitle" class="text-xs text-gray-500 mb-4"></p>
+    <div id="people-body"></div>
+  </div>
 </div>
 
 <script>
@@ -345,6 +408,8 @@ function renderCard(e) {
   const venue = e.venue ? `<span class="text-gray-500">·</span> ${e.venue}` : '';
   const desc = e.description ? `<p class="text-gray-500 text-sm mt-2 line-clamp-2">${e.description}</p>` : '';
   const link = e.url ? `<a href="${e.url}" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 mt-2 inline-block">Open →</a>` : '';
+  const peopleBtn = (e.external_id && e.external_id.startsWith('evt-'))
+    ? `<button class="ppl-btn ml-3" onclick="openPeople('${e.external_id}')">👥 People</button>` : '';
 
   return `
     <div class="card rounded-xl p-4 transition-all duration-150">
@@ -356,7 +421,7 @@ function renderCard(e) {
           <h3 class="font-medium text-white leading-snug">${e.name}</h3>
           <p class="text-sm text-gray-400 mt-1">${e.start_pt} ${venue}</p>
           ${desc}
-          ${link}
+          ${link}${peopleBtn}
         </div>
         ${e.image_url ? `<img src="${e.image_url}" loading="lazy" class="w-20 h-20 rounded-lg object-cover flex-shrink-0" onerror="this.style.display='none'">` : ''}
       </div>
@@ -375,6 +440,76 @@ function onLiveModeChange() {
 
 
 loadEvents();
+
+// ---- People modal ----
+let peopleEventId = null;
+
+function esc(s) {
+  return (s == null ? '' : String(s)).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+function openPeople(eid) {
+  peopleEventId = eid;
+  const ev = allEvents.find(e => e.external_id === eid);
+  document.getElementById('people-modal').classList.remove('hidden');
+  document.getElementById('people-subtitle').textContent = ev ? ev.name : eid;
+  document.getElementById('people-body').innerHTML = '<p class="text-gray-500 text-sm py-6 text-center">Loading…</p>';
+  fetch('/api/people?event=' + encodeURIComponent(eid))
+    .then(r => r.json())
+    .then(renderPeople);
+}
+
+function closePeople() {
+  document.getElementById('people-modal').classList.add('hidden');
+}
+
+function findPeople() {
+  const body = document.getElementById('people-body');
+  body.innerHTML = '<p class="text-gray-500 text-sm py-6 text-center">Collecting hosts + guests, enriching, and ranking with Claude… (~1 min)</p>';
+  fetch('/api/people/find?event=' + encodeURIComponent(peopleEventId), {method: 'POST'})
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { body.innerHTML = `<p class="text-red-400 text-sm py-6 text-center">${esc(d.error)}</p>`; return; }
+      renderPeople(d);
+    });
+}
+
+function renderPeople(people) {
+  const body = document.getElementById('people-body');
+  if (!people || !people.length) {
+    body.innerHTML = `<div class="text-center py-8">
+      <p class="text-gray-500 text-sm mb-4">No people collected yet for this event.</p>
+      <button onclick="findPeople()" class="ppl-btn px-4 py-2">✨ Find people</button></div>`;
+    return;
+  }
+  const linkIcon = (url, label) => url ? `<a href="${esc(url)}" target="_blank" class="text-indigo-400 hover:text-indigo-300 text-xs mr-2">${label}</a>` : '';
+  const rows = people.map(p => {
+    const s = p.score;
+    const sc = s == null ? '' : `<span class="score ${s>=7?'s-hi':s>=5?'s-mid':'s-lo'}">${s}/10</span>`;
+    const tag = `<span class="text-xs text-gray-500">${p.role === 'host' ? 'HOST' : 'guest'}</span>`;
+    const face = p.face_url
+      ? `<img src="${esc(p.face_url)}" loading="lazy" class="w-12 h-12 rounded-full object-cover flex-shrink-0 bg-gray-800" onerror="this.style.visibility='hidden'">`
+      : `<div class="w-12 h-12 rounded-full flex-shrink-0 bg-gray-800 flex items-center justify-center text-gray-500 text-sm">${esc((p.name||'?').slice(0,1))}</div>`;
+    return `
+      <div class="flex gap-3 py-3 border-b border-gray-800">
+        ${face}
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            ${sc}<span class="font-medium text-white">${esc(p.name)}</span>${tag}
+          </div>
+          ${p.current_role ? `<p class="text-xs text-gray-400 mt-0.5">${esc(p.current_role)}</p>` : ''}
+          ${p.reason ? `<p class="text-sm text-gray-300 mt-1">${esc(p.reason)}</p>` : ''}
+          ${p.icebreaker ? `<p class="ice text-sm text-gray-300 mt-2 pl-2 py-1 rounded">💬 ${esc(p.icebreaker)}</p>` : ''}
+          <div class="mt-2">${linkIcon(p.github,'GitHub')}${linkIcon(p.linkedin,'LinkedIn')}${linkIcon(p.twitter,'Twitter')}${linkIcon(p.website,'Site')}</div>
+        </div>
+      </div>`;
+  }).join('');
+  const ranked = people.some(p => p.score != null);
+  body.innerHTML = rows +
+    `<div class="text-center pt-4"><button onclick="findPeople()" class="ppl-btn px-4 py-2">↻ ${ranked ? 'Re-run' : 'Rank with Claude'}</button></div>`;
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePeople(); });
 
 async function lumaSearch() {
   const q = document.getElementById('search').value.trim();

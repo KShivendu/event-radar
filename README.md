@@ -61,15 +61,25 @@ For a given meetup, build a ranked list of who's worth your time — hosts and t
 featured guests Luma shows publicly — each scored against your profile with an
 icebreaker drafted by Claude.
 
+`find_people.py` runs the whole flow in one command — **collect → enrich (GitHub /
+site / current role / face) → rank** — and stores everything on the `people` table:
+
 ```bash
 # One-time: set up your profile
 cp profile.example.json profile.json   # edit with your role, goals, interests
 
 # Accepts a lu.ma URL, a slug, or an evt- id
 python3 find_people.py https://lu.ma/yj5uvoei
-python3 find_people.py evt-oiXR0BSLzOsOgtn --web    # let Claude web-search people first
-python3 find_people.py https://lu.ma/yj5uvoei --no-rank   # just collect, no LLM
+python3 find_people.py evt-oiXR0BSLzOsOgtn --contacts-web  # web-search each person while enriching
+python3 find_people.py https://lu.ma/yj5uvoei --no-rank    # collect + enrich, no LLM ranking
+python3 find_people.py https://lu.ma/yj5uvoei --no-contacts --no-rank  # bare collection
 ```
+
+Or from the **web UI** (`python3 ui.py`): each Luma event card has a **👥 People**
+button that opens a panel of the ranked people — faces, scores, reasons, icebreakers,
+and social links — with a button to run the pipeline on demand.
+
+The stages below (`enrich_contacts.py`, ranking) can also be run standalone.
 
 **Ranking backend** is auto-selected:
 - If `ANTHROPIC_API_KEY` is set (e.g. in `.env`), it uses the Anthropic SDK — and `--web` lets Claude web-search people before scoring.

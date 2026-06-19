@@ -1,17 +1,26 @@
 #!/usr/bin/env python3
 """Given a Luma event, collect the people you could talk to (hosts + featured guests),
-rank them against your profile with Claude, and print who's worth your time.
+enrich them (GitHub / site / current role / face), and rank them against your profile
+with Claude — one command.
 
 Usage:
-    python3 find_people.py <lu.ma-url | slug | evt-id> [--web] [--no-rank]
+    python3 find_people.py <lu.ma-url | slug | evt-id> [options]
 
     python3 find_people.py https://lu.ma/yj5uvoei
-    python3 find_people.py evt-oiXR0BSLzOsOgtn --web
+    python3 find_people.py evt-oiXR0BSLzOsOgtn --contacts-web   # web-search each person
+    python3 find_people.py https://lu.ma/yj5uvoei --no-rank     # collect + enrich only
 
-Requires ANTHROPIC_API_KEY (in .env or env) for ranking. --no-rank skips the LLM
-and just lists collected people. --web lets Claude web-search people before ranking.
+Options:
+    --no-contacts    skip GitHub/site/role/face enrichment
+    --contacts-web   let Claude web-search each person during enrichment (slower)
+    --no-rank        skip LLM ranking
+    --web            let Claude web-search people during ranking (needs API key)
+
+Ranking/web use the Anthropic SDK when ANTHROPIC_API_KEY is set, else the local
+`claude` CLI (already authenticated).
 """
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -21,61 +30,46 @@ try:
 except ImportError:
     pass
 
-from scraper.sources import luma_people
-
-
-def _fmt_handles(p: dict) -> str:
-    bits = []
-    if p.get("twitter_handle"):
-        bits.append(f"x.com/{p['twitter_handle']}")
-    if p.get("linkedin_handle"):
-        bits.append("linkedin.com/" + p["linkedin_handle"].lstrip("/"))
-    if p.get("website"):
-        bits.append(p["website"])
-    return "  ".join(bits)
+from pipeline import find_people
 
 
 def main():
     ap = argparse.ArgumentParser(description="Find people to talk to at a Luma event.")
     ap.add_argument("event", help="lu.ma URL, slug, or evt- id")
-    ap.add_argument("--web", action="store_true", help="let Claude web-search people before ranking")
-    ap.add_argument("--no-rank", action="store_true", help="skip LLM ranking, just collect")
+    ap.add_argument("--no-contacts", action="store_true", help="skip GitHub/site/role/face enrichment")
+    ap.add_argument("--contacts-web", action="store_true", help="web-search each person during enrichment")
+    ap.add_argument("--no-rank", action="store_true", help="skip LLM ranking")
+    ap.add_argument("--web", action="store_true", help="web-search people during ranking")
     args = ap.parse_args()
 
-    print(f"Resolving and collecting people for: {args.event}")
-    summary = luma_people.collect(args.event)
-    people = summary["people"]
-    print(f"\n{summary['event_name']}")
-    print(f"{summary['event_url']}  —  {summary['guest_count']} registered")
-    hosts = [p for p in people if p["role"] == "host"]
-    guests = [p for p in people if p["role"] == "guest"]
-    print(f"Collected {len(people)} people ({len(hosts)} hosts, {len(guests)} featured guests).\n")
+    print(f"Collecting + enriching people for: {args.event}\n")
+    try:
+        summary, people = find_people(
+            args.event,
+            contacts=not args.no_contacts, contacts_web=args.contacts_web,
+            rank=not args.no_rank, rank_web=args.web,
+        )
+    except Exception as e:
+        print(f"Failed: {e}", file=sys.stderr)
+        sys.exit(1)
 
-    if not args.no_rank and people:
-        try:
-            from enrich import enrich_people
-            from scraper.db import save_ranking
-            print("Ranking with Claude" + (" (+ web search)" if args.web else "") + "...\n")
-            people = enrich_people(summary, people, use_web=args.web)
-            for p in people:
-                if p.get("rank_score") is not None:
-                    save_ranking(summary["event_api_id"], p["person_api_id"],
-                                 p["rank_score"], p["rank_reason"], p["icebreaker"])
-        except FileNotFoundError as e:
-            print(f"  (skipping ranking: {e})\n", file=sys.stderr)
-        except ImportError:
-            print("  (skipping ranking: `pip install anthropic` to enable)\n", file=sys.stderr)
-        except Exception as e:
-            print(f"  (ranking failed, showing unranked list: {e})\n", file=sys.stderr)
+    hosts = sum(1 for p in people if p["role"] == "host")
+    print(f"{summary['event_name']}")
+    print(f"{summary['event_url']}  —  {summary['guest_count']} registered")
+    print(f"{len(people)} people ({hosts} hosts, {len(people)-hosts} featured guests)\n")
 
     for p in people:
+        links = json.loads(p.get("discovered_links") or "{}")
         score = p.get("rank_score")
-        badge = f"[{score}/10] " if score is not None else ""
+        badge = f"[{int(score)}/10] " if score is not None else ""
         tag = "HOST" if p["role"] == "host" else "guest"
         print(f"{badge}{p['name']}  ({tag})")
-        if p.get("bio_short"):
-            print(f"    {p['bio_short']}")
-        handles = _fmt_handles(p)
+        role = p.get("current_role") or p.get("bio_short")
+        if role:
+            print(f"    {role}")
+        if p.get("face_url"):
+            print(f"    face: {p['face_url']}")
+        handles = "  ".join(f"{k}:{links[k]}" for k in ("github", "linkedin", "twitter", "website") if links.get(k))
         if handles:
             print(f"    {handles}")
         if p.get("rank_reason"):
