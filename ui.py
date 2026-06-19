@@ -4,9 +4,10 @@ import json
 from datetime import datetime, timezone
 import zoneinfo
 from flask import Flask, request, jsonify, render_template_string
-from scraper.db import get_conn, get_event_people
+from scraper.db import get_conn, get_event_people, init_db
 
 app = Flask(__name__)
+init_db()
 PT = zoneinfo.ZoneInfo("America/Los_Angeles")
 
 
@@ -455,8 +456,12 @@ function openPeople(eid) {
   document.getElementById('people-subtitle').textContent = ev ? ev.name : eid;
   document.getElementById('people-body').innerHTML = '<p class="text-gray-500 text-sm py-6 text-center">Loading…</p>';
   fetch('/api/people?event=' + encodeURIComponent(eid))
-    .then(r => r.json())
-    .then(renderPeople);
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(renderPeople)
+    .catch(err => {
+      document.getElementById('people-body').innerHTML =
+        `<p class="text-red-400 text-sm py-6 text-center">Error loading people (${err})</p>`;
+    });
 }
 
 function closePeople() {
