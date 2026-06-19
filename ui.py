@@ -335,9 +335,10 @@ HTML = r"""<!DOCTYPE html>
       <h1 class="text-2xl font-bold text-white">SF Events</h1>
       <p class="text-sm text-gray-500 mt-1" id="subtitle">Loading...</p>
     </div>
-    <button onclick="loadEvents()" class="text-xs px-3 py-1.5 rounded border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors">
-      ↻ Refresh
-    </button>
+    <div class="flex gap-2">
+      <a href="/face" class="text-xs px-3 py-1.5 rounded border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors">📷 Face</a>
+      <button onclick="loadEvents()" class="text-xs px-3 py-1.5 rounded border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors">↻ Refresh</button>
+    </div>
   </div>
 
   <!-- Filters -->
