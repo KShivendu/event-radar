@@ -6,8 +6,9 @@ DB_PATH = Path(__file__).parent.parent / "events.db"
 
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
@@ -45,6 +46,16 @@ def init_db():
         """)
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_source ON events(source)
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS scrape_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                duration_ms INTEGER,
+                events_upserted INTEGER,
+                error TEXT
+            )
         """)
         # People at an event — hosts and publicly-visible (featured) guests.
         # Luma exposes up to ~10 featured guests per event without auth, plus all hosts.
@@ -88,6 +99,14 @@ def init_db():
                 conn.execute(f"ALTER TABLE people ADD COLUMN {col}")
             except Exception:
                 pass
+
+
+def log_scrape_run(source: str, started_at: str, duration_ms: int, events_upserted: int, error: str = None):
+    with get_conn() as conn:
+        conn.execute("""
+            INSERT INTO scrape_runs (source, started_at, duration_ms, events_upserted, error)
+            VALUES (?, ?, ?, ?, ?)
+        """, (source, started_at, duration_ms, events_upserted, error))
 
 
 def save_contact(event_api_id: str, person_api_id: str, fields: dict):
