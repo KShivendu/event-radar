@@ -12,6 +12,7 @@ except ImportError:
 
 from scraper.db import init_db
 from scraper.sources import luma, luma_sf, luma_my_events, luma_keyword_search, cerebral_valley
+import sync_calendars
 
 SOURCES = [
     ("luma", luma.scrape),
@@ -24,6 +25,10 @@ SOURCES = [
 
 def main():
     init_db()
+    try:
+        sync_calendars.main()
+    except Exception as e:
+        print(f"[sync_calendars] FAILED: {e}", file=sys.stderr)
     total = 0
     for name, scrape_fn in SOURCES:
         try:
