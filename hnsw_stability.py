@@ -113,13 +113,24 @@ def parse_hnsw(path: str) -> dict:
     }
 
 
-def build(data: np.ndarray, seed: int, M: int, ef: int, space: str) -> dict:
-    """Build one single-threaded HNSW index and parse its graph."""
+def build(data: np.ndarray, seed: int, M: int, ef: int, space: str,
+          order: np.ndarray | None = None) -> dict:
+    """Build one single-threaded HNSW index and parse its graph.
+
+    `order` is an insertion permutation over row indices; row i keeps label i
+    regardless of when it is inserted, so graphs stay comparable by document id.
+    hnswlib draws each node's level from the RNG in *insertion order*, so a
+    different order reshuffles which nodes reach the upper layers even at a fixed
+    seed — matching how production rebuilds (re-ingest, merges) actually differ.
+    """
     n, d = data.shape
     idx = hnswlib.Index(space=space, dim=d)
     idx.init_index(max_elements=n, ef_construction=ef, M=M, random_seed=seed)
     idx.set_num_threads(1)
-    idx.add_items(data, np.arange(n), num_threads=1)
+    if order is None:
+        idx.add_items(data, np.arange(n), num_threads=1)
+    else:
+        idx.add_items(data[order], np.asarray(order), num_threads=1)
     with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as fh:
         path = fh.name
     idx.save_index(path)
@@ -166,7 +177,15 @@ def main():
     ap.add_argument("--M", type=int, default=16)
     ap.add_argument("--ef", type=int, default=200)
     ap.add_argument("--space", default="l2", choices=["l2", "cosine", "ip"])
-    ap.add_argument("--seeds", type=int, nargs="+", default=[1, 2, 3, 4, 5])
+    ap.add_argument("--seeds", type=int, nargs="+", default=[1, 2, 3, 4, 5],
+                    help="values to vary; RNG seeds in 'seed' mode, "
+                         "insertion-order shuffle seeds in 'order' mode")
+    ap.add_argument("--vary", choices=["seed", "order"], default="seed",
+                    help="'seed': fixed insertion order, vary hnswlib random_seed. "
+                         "'order': fixed random_seed, vary insertion order (realistic "
+                         "rebuild — re-ingest/merges don't preserve order).")
+    ap.add_argument("--build-seed", type=int, default=42,
+                    help="the fixed hnswlib random_seed used in --vary order mode")
     ap.add_argument("--data-seed", type=int, default=0)
     ap.add_argument("--data", default=None,
                     help="path to .npy/.npz of real embeddings (npz key 'embeddings'); "
@@ -184,14 +203,29 @@ def main():
         data = rng.standard_normal((args.n, args.dim)).astype(np.float32)
         src = f"synthetic gaussian (data-seed={args.data_seed})"
 
+    # in 'order' mode we hold the RNG fixed and give each build a different
+    # insertion permutation; in 'seed' mode we keep the natural order and vary
+    # the RNG. build_args(v) returns the (random_seed, order) for value v.
+    def build_args(v):
+        if args.vary == "order":
+            order = np.random.default_rng(v).permutation(args.n)
+            return args.build_seed, order
+        return v, None
+
     print(f"dataset: {src}")
     print(f"dataset: n={args.n} dim={args.dim} space={args.space} | "
           f"M={args.M} ef_construction={args.ef} | single-threaded")
-    print(f"seeds: {args.seeds}\n")
+    if args.vary == "order":
+        print(f"varying: INSERTION ORDER (fixed random_seed={args.build_seed})")
+        print(f"order-shuffle seeds: {args.seeds}\n")
+    else:
+        print(f"varying: RANDOM_SEED (fixed natural insertion order)")
+        print(f"seeds: {args.seeds}\n")
 
     graphs = {}
     for s in args.seeds:
-        graphs[s] = build(data, s, args.M, args.ef, args.space)
+        bs, order = build_args(s)
+        graphs[s] = build(data, bs, args.M, args.ef, args.space, order=order)
 
     # ---- layer size profile (from the first seed) ----
     g0 = graphs[args.seeds[0]]
@@ -203,16 +237,18 @@ def main():
         ne = len(g0["level_edges"][L])
         print(f"  {L:>5} {nn:>9} {ne:>10} {ne / nn:>8.2f}")
 
-    # ---- determinism sanity check: same seed twice must be identical ----
-    print("\n[sanity] rebuilding seed %d again (must be identical)..." % args.seeds[0])
-    g_repeat = build(data, args.seeds[0], args.M, args.ef, args.space)
+    # ---- determinism sanity check: same inputs twice must be identical ----
+    print("\n[sanity] rebuilding value %d again (must be identical)..." % args.seeds[0])
+    bs0, order0 = build_args(args.seeds[0])
+    g_repeat = build(data, bs0, args.M, args.ef, args.space, order=order0)
     det = compare(g0, g_repeat)
     identical = all(r["node_jac"] == 1.0 and r["edge_jac"] == 1.0 for r in det.values())
     print(f"  identical across every layer: {identical}")
 
-    # ---- cross-seed stability ----
+    # ---- cross-build stability ----
+    axis = "order pairs" if args.vary == "order" else "seed pairs"
     pairs = list(combinations(args.seeds, 2))
-    print(f"\ncross-seed stability, averaged over {len(pairs)} seed pairs:")
+    print(f"\ncross-build stability, averaged over {len(pairs)} {axis}:")
     print(f"  {'layer':>5} {'#nodes':>9} {'node stab':>10} {'#edges':>10} {'edge stab':>10}")
 
     all_layers = sorted(set().union(*[set(g["level_nodes"]) for g in graphs.values()]))
@@ -241,7 +277,7 @@ def main():
 
     ejs = [jaccard(all_edges(graphs[a]), all_edges(graphs[b])) for a, b in pairs]
     print(f"\nwhole-graph edge stability (all layers): {fmt_pct(np.mean(ejs))}")
-    print("(node id = insertion order; edges compared by external label)")
+    print("(nodes and edges compared by external document label)")
 
 
 if __name__ == "__main__":
