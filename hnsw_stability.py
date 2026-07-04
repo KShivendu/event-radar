@@ -168,11 +168,23 @@ def main():
     ap.add_argument("--space", default="l2", choices=["l2", "cosine", "ip"])
     ap.add_argument("--seeds", type=int, nargs="+", default=[1, 2, 3, 4, 5])
     ap.add_argument("--data-seed", type=int, default=0)
+    ap.add_argument("--data", default=None,
+                    help="path to .npy/.npz of real embeddings (npz key 'embeddings'); "
+                         "capped at --n rows. Falls back to synthetic Gaussian if unset.")
     args = ap.parse_args()
 
-    rng = np.random.default_rng(args.data_seed)
-    data = rng.standard_normal((args.n, args.dim)).astype(np.float32)
+    if args.data:
+        loaded = np.load(args.data)
+        arr = loaded["embeddings"] if hasattr(loaded, "files") else loaded
+        data = np.ascontiguousarray(arr[: args.n]).astype(np.float32)
+        args.n, args.dim = data.shape
+        src = args.data
+    else:
+        rng = np.random.default_rng(args.data_seed)
+        data = rng.standard_normal((args.n, args.dim)).astype(np.float32)
+        src = f"synthetic gaussian (data-seed={args.data_seed})"
 
+    print(f"dataset: {src}")
     print(f"dataset: n={args.n} dim={args.dim} space={args.space} | "
           f"M={args.M} ef_construction={args.ef} | single-threaded")
     print(f"seeds: {args.seeds}\n")
