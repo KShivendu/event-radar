@@ -13,6 +13,7 @@ Backends mirror enrich.py: the Anthropic SDK when an API key is set, otherwise t
 local `claude` CLI (already authenticated). The unique anchors we trust for identity
 are the Twitter handle and website — everything is matched back to those.
 """
+from paths import ENV_FILE
 import hashlib
 import json
 import os
@@ -284,7 +285,7 @@ if __name__ == "__main__":
     from pathlib import Path
     try:
         from dotenv import load_dotenv
-        load_dotenv(Path(__file__).parent / ".env")
+        load_dotenv(ENV_FILE)
     except ImportError:
         pass
     from scraper.sources import luma_people

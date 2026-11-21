@@ -9,3 +9,8 @@ __pycache__/
 # Personal research notes
 *.md
 !README.md
+
+# data (mounted at /data in Docker; never commit: public repo)
+data/
+faces/
+events.db-*

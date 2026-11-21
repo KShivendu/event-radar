@@ -19,8 +19,8 @@ import numpy as np
 import requests
 from PIL import Image
 
-DB_PATH = pathlib.Path("events.db")
-FACES_DIR = pathlib.Path("faces")
+from paths import DB_PATH
+from paths import FACES_DIR
 FACES_DIR.mkdir(exist_ok=True)
 
 LUMA_DEFAULT_AVATAR = "avatars-default"

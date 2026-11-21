@@ -4,7 +4,7 @@ from pathlib import Path
 
 import requests
 
-CALENDARS_FILE = Path(__file__).parent.parent.parent / "luma_calendars.json"
+from paths import CALENDARS_FILE
 
 # Fallback hardcoded list — used when luma_calendars.json is absent (stale cookie, first run)
 FALLBACK_CALENDARS = [

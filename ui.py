@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Local web UI for browsing SF events from events.db"""
+from paths import FACES_DIR
 import json
 import threading
 from datetime import datetime, timezone
@@ -31,7 +32,7 @@ def _get_face_app():
 def _get_face_index(event_id: str):
     if event_id not in _face_indexes:
         import numpy as np, pathlib
-        path = pathlib.Path("faces") / f"{event_id}.npz"
+        path = FACES_DIR / f"{event_id}.npz"
         if not path.exists():
             return None, None
         data = np.load(path, allow_pickle=True)
@@ -295,6 +296,7 @@ HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script>/* behind a path prefix (e.g. homelab/events), relative api/ calls need the trailing slash */ if (location.pathname.length > 1 && !location.pathname.endsWith("/")) location.replace(location.pathname + "/" + location.search);</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SF Events</title>
 <script src="https://cdn.tailwindcss.com"></script>
@@ -337,7 +339,7 @@ HTML = r"""<!DOCTYPE html>
       <p class="text-sm text-gray-500 mt-1" id="subtitle">Loading...</p>
     </div>
     <div class="flex gap-2">
-      <a href="/face" class="text-xs px-3 py-1.5 rounded border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors">📷 Face</a>
+      <a href="face" class="text-xs px-3 py-1.5 rounded border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors">📷 Face</a>
       <button onclick="loadEvents()" class="text-xs px-3 py-1.5 rounded border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors">↻ Refresh</button>
     </div>
   </div>
@@ -399,7 +401,7 @@ let allEvents = [];
 let selectedDate = new Date().toLocaleDateString('en-CA', {timeZone: 'America/Los_Angeles'});
 
 async function loadDates() {
-  const res = await fetch('/api/dates');
+  const res = await fetch('api/dates');
   const dates = await res.json();
   const today = new Date().toLocaleDateString('en-CA', {timeZone: 'America/Los_Angeles'});
   const pills = document.getElementById('date-pills');
@@ -424,7 +426,7 @@ async function loadEvents() {
   const params = new URLSearchParams({ source, q, location });
   if (selectedDate) params.set('date', selectedDate);
 
-  const res = await fetch('/api/events?' + params);
+  const res = await fetch('api/events?' + params);
   allEvents = await res.json();
   renderEvents();
   loadDates(); // refresh pills with active state
@@ -525,7 +527,7 @@ function openPeople(eid) {
   document.getElementById('people-modal').classList.remove('hidden');
   document.getElementById('people-subtitle').textContent = ev ? ev.name : eid;
   document.getElementById('people-body').innerHTML = '<p class="text-gray-500 text-sm py-6 text-center">Loading…</p>';
-  fetch('/api/people?event=' + encodeURIComponent(eid))
+  fetch('api/people?event=' + encodeURIComponent(eid))
     .then(r => r.ok ? r.json() : Promise.reject(r.status))
     .then(renderPeople)
     .catch(err => {
@@ -541,7 +543,7 @@ function closePeople() {
 function findPeople() {
   const body = document.getElementById('people-body');
   body.innerHTML = '<p class="text-gray-500 text-sm py-6 text-center">Collecting people…</p>';
-  fetch('/api/people/find?event=' + encodeURIComponent(peopleEventId), {method: 'POST'})
+  fetch('api/people/find?event=' + encodeURIComponent(peopleEventId), {method: 'POST'})
     .then(r => r.json())
     .then(d => {
       if (d.error) { body.innerHTML = `<p class="text-red-400 text-sm py-6 text-center">${esc(d.error)}</p>`; return; }
@@ -551,7 +553,7 @@ function findPeople() {
 }
 
 function pollRankStatus() {
-  fetch('/api/people/rank-status?event=' + encodeURIComponent(peopleEventId))
+  fetch('api/people/rank-status?event=' + encodeURIComponent(peopleEventId))
     .then(r => r.json())
     .then(d => {
       const body = document.getElementById('people-body');
@@ -567,7 +569,7 @@ function pollRankStatus() {
         }
         setTimeout(pollRankStatus, 4000);
       } else if (d.status === 'done') {
-        fetch('/api/people?event=' + encodeURIComponent(peopleEventId))
+        fetch('api/people?event=' + encodeURIComponent(peopleEventId))
           .then(r => r.json()).then(renderPeople);
       }
     });
@@ -623,7 +625,7 @@ function renderPeople(people) {
 
 function checkFaceIndexStatus() {
   if (!peopleEventId) return;
-  fetch('/api/face/prep-status?event=' + encodeURIComponent(peopleEventId))
+  fetch('api/face/prep-status?event=' + encodeURIComponent(peopleEventId))
     .then(r => r.json())
     .then(d => {
       const btn = document.getElementById('face-index-btn');
@@ -646,7 +648,7 @@ function buildFaceIndex() {
   const btn = document.getElementById('face-index-btn');
   btn.textContent = '⏳ Indexing faces…';
   btn.disabled = true;
-  fetch('/api/face/prep?event=' + encodeURIComponent(peopleEventId), {method: 'POST'})
+  fetch('api/face/prep?event=' + encodeURIComponent(peopleEventId), {method: 'POST'})
     .then(() => { setTimeout(checkFaceIndexStatus, 3000); });
 }
 
@@ -657,7 +659,7 @@ async function lumaSearch() {
   const container = document.getElementById('luma-search-results');
   if (!q) { container.innerHTML = ''; return; }
   container.innerHTML = '<p class="text-gray-500 text-sm py-4">Searching Luma...</p>';
-  const res = await fetch('/api/luma-search?q=' + encodeURIComponent(q));
+  const res = await fetch('api/luma-search?q=' + encodeURIComponent(q));
   document.getElementById('subtitle').textContent = `Luma: "${q}"`;
   const data = await res.json();
   if (data.error) { container.innerHTML = `<p class="text-red-400 text-sm">${data.error}</p>`; return; }
@@ -723,7 +725,7 @@ def api_face_prep():
 def api_face_prep_status():
     event_id = request.args.get("event", "")
     import pathlib, numpy as np
-    npz = pathlib.Path("faces") / f"{event_id}.npz"
+    npz = FACES_DIR / f"{event_id}.npz"
     status = _face_prep_status.get(event_id)
     if status:
         return jsonify({"status": status})
@@ -740,7 +742,7 @@ def api_face_prep_status():
 def api_face_events():
     """Return list of events that have a pre-built face index (.npz)."""
     import pathlib
-    faces_dir = pathlib.Path("faces")
+    faces_dir = FACES_DIR
     if not faces_dir.exists():
         return jsonify([])
     events = []
@@ -893,7 +895,7 @@ FACE_HTML = r"""<!doctype html>
   <canvas id="canvas"></canvas>
 
   <div id="topbar">
-    <a href="/">←</a>
+    <a href="./">←</a>
     <select id="event-sel" onchange="loadEvent()"><option value="">— pick event —</option></select>
   </div>
 
@@ -918,7 +920,7 @@ let stream = null;
 let mirrored = false;
 
 async function init() {
-  const r = await fetch('/api/face/events');
+  const r = await fetch('api/face/events');
   const events = await r.json();
   const sel = document.getElementById('event-sel');
   events.forEach(e => {
@@ -987,7 +989,7 @@ async function snap() {
   canvas.toBlob(async blob => {
     try {
       const buf = await blob.arrayBuffer();
-      const r = await fetch(`/api/face/search?event=${encodeURIComponent(currentEvent)}`, {
+      const r = await fetch(`api/face/search?event=${encodeURIComponent(currentEvent)}`, {
         method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: buf
       });
       const d = await r.json();

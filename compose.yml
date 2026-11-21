@@ -1,0 +1,38 @@
+# event-radar: web UI + a scraper that runs every 6 hours. Both share one data folder.
+#
+#   Server: the homelab deployer runs `DATA_DIR=/srv/data/event-radar docker compose up -d --build`
+#           after every push to master.
+#   Laptop: `docker compose up --build` works too; data goes to ./data.
+#
+# Secrets (LUMA_COOKIE, ANTHROPIC_API_KEY ...) go in <DATA_DIR>/.env. The app loads that file itself
+# (paths.ENV_FILE), so Compose never parses it; a cookie full of `$` signs is safe there.
+#
+# The web port is bound to 127.0.0.1 on purpose: the app is never public by accident.
+# Exposure (Tailscale homelab/events, or Caddy) is decided in the homelab repo.
+
+x-app: &app
+  build: .
+  image: event-radar:latest
+  environment:
+    EVENT_RADAR_DATA: /data
+  volumes:
+    - ${DATA_DIR:-./data}:/data
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: 10m, max-file: "3" }
+
+services:
+  web:
+    <<: *app
+    ports:
+      - "127.0.0.1:${PORT:-5050}:5050"
+
+  scraper:
+    <<: *app
+    command: >
+      sh -c 'while true; do
+               echo "[scraper] run at $$(date -u +%FT%TZ)";
+               python run_scraper.py;
+               sleep $${SCRAPE_EVERY_SECONDS:-21600};
+             done'

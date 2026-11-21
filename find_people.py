@@ -19,6 +19,7 @@ Options:
 Ranking/web use the Anthropic SDK when ANTHROPIC_API_KEY is set, else the local
 `claude` CLI (already authenticated).
 """
+from paths import ENV_FILE
 import argparse
 import json
 import sys
@@ -26,7 +27,7 @@ from pathlib import Path
 
 try:
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).parent / ".env")
+    load_dotenv(ENV_FILE)
 except ImportError:
     pass
 

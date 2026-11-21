@@ -1,0 +1,14 @@
+# data and secrets live in the mounted data folder, never in the image
+.env
+events.db*
+faces/
+data/
+profile.json
+*.csv
+*.md
+!README.md
+deploy/
+__pycache__/
+*.pyc
+.git/
+.claude/

@@ -18,7 +18,7 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).parent
-PROFILE_FILE = ROOT / "profile.json"
+from paths import PROFILE_FILE
 MODEL = "claude-opus-4-8"
 CLI_TIMEOUT = 300
 

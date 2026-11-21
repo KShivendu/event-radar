@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run all event scrapers and save to events.db."""
+from paths import ENV_FILE
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -8,7 +9,7 @@ from pathlib import Path
 
 try:
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).parent / ".env")
+    load_dotenv(ENV_FILE)
 except ImportError:
     pass
 

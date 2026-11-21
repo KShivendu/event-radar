@@ -16,7 +16,7 @@ import sys
 import cv2
 import numpy as np
 
-FACES_DIR = pathlib.Path("faces")
+from paths import FACES_DIR
 MATCH_THRESHOLD = 0.35   # cosine similarity; below this = "unknown"
 NO_MATCH_LABEL = "Unknown"
 

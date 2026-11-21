@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """Fetch the list of Luma calendars the user follows and save to luma_calendars.json."""
+from paths import ENV_FILE, CALENDARS_FILE
 import json
 import os
 from pathlib import Path
 
 try:
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).parent / ".env")
+    load_dotenv(ENV_FILE)
 except ImportError:
     pass
 
 import requests
 
-OUT = Path(__file__).parent / "luma_calendars.json"
+OUT = CALENDARS_FILE
 
 
 def fetch():
